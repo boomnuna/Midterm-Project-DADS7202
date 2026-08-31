@@ -1,0 +1,50 @@
+# configs/wandb_sweep.yaml
+#
+# W&B Sweep definition — this is the piece that lets every group member
+# contribute hyperparameter trials to ONE shared search from their own
+# machine, which is what the assignment specifically recommends W&B for.
+#
+# HOW GROUP MEMBERS USE THIS (do steps 1-2 ONCE, as a group):
+#   1. One person runs:
+#        wandb sweep configs/wandb_sweep.yaml
+#      This prints a SWEEP_ID like: your-entity/your-project/abc123
+#   2. Share that SWEEP_ID with the group (Slack/Line/whatever)
+#
+# THEN EVERY GROUP MEMBER (including step 1's person) runs, from their
+# own machine:
+#        wandb agent SWEEP_ID
+#   Each person's agent pulls a new hyperparameter combination from the
+#   shared sweep, trains it, and logs the result back to the same W&B
+#   project — so the whole group's compute contributes to one search,
+#   viewable together on the W&B dashboard in real time.
+
+program: scripts/wandb_sweep_train.py
+method: bayes            # smarter than pure random/grid for a limited trial budget
+metric:
+  name: val_accuracy
+  goal: maximize
+
+parameters:
+  backbone_name:
+    values: ["resnet50", "vgg16", "efficientnet_b0", "mobilenet_v3_large"]
+  learning_rate:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.01
+  weight_decay:
+    distribution: log_uniform_values
+    min: 0.000001
+    max: 0.01
+  head_dropout:
+    distribution: uniform
+    min: 0.1
+    max: 0.5
+  head_hidden_dim:
+    values: [128, 256, 512]
+  optimizer_name:
+    values: ["adamw", "sgd"]
+
+# Early-terminate clearly bad runs to save the group's shared compute budget
+early_terminate:
+  type: hyperband
+  min_iter: 3
