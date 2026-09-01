@@ -28,7 +28,7 @@ class Config:
 
     # ---- image / dataloader ----
     image_size: int = 224          # standard input size for most torchvision backbones
-    batch_size: int = 32
+    batch_size: int = 64
     num_workers: int = 4
 
     # ---- train/val/test split (used only if your data_root has no
@@ -81,7 +81,7 @@ class Config:
     # Local file logging always happens regardless of the flags below —
     # see src/utils/logger.py. These two are OPTIONAL cloud/tracking add-ons.
     use_wandb: bool = False
-    wandb_project: str = "dl-hw-image-classifier"
+    wandb_project: str = "Midterm-Project-DADS7202" 
     wandb_entity: str = None   # your W&B team/org name, if using one
 
     use_optuna: bool = False
