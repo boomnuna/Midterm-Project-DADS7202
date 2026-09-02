@@ -56,6 +56,24 @@ class ExperimentLogger:
     def error(self, msg: str):
         self._logger.error(msg)
 
+    def log_config(self, config_dict: dict):
+        """
+        Logs the FULL hyperparameter/setting snapshot for this run — both
+        as readable lines in the .log file (so you can just open it and
+        see exactly what was used) AND as a standalone JSON file
+        (outputs/logs/<run_id>_config.json), which is the file to diff
+        against if you're trying to figure out exactly what differed
+        between two runs, or to reproduce a specific run exactly.
+
+        Call this once, right after starting a run, before training.
+        """
+        self.info("=" * 50)
+        self.info("FULL CONFIG FOR THIS RUN:")
+        for key, value in config_dict.items():
+            self.info(f"  {key}: {value}")
+        self.info("=" * 50)
+        self.save_json(config_dict, filename=f"{self.run_id}_config.json")
+
     # ---- structured helpers used by Trainer/ExperimentRunner ----
     def log_epoch(self, epoch: int, train_loss: float, train_acc: float,
                   val_loss: float, val_acc: float):

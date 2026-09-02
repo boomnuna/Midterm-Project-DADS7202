@@ -36,6 +36,7 @@ def main():
 
     run_id = f"single_{args.backbone}_seed{args.seed}"
     logger = ExperimentLogger(config.output_root, run_id=run_id)
+    logger.log_config(config.to_dict())
     checkpoint_manager = CheckpointManager(config.output_root / "checkpoints", run_id)
     if checkpoint_manager.has_checkpoint():
         logger.info("Found existing checkpoint — will resume from it (e.g. after a Colab disconnect).")

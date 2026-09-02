@@ -14,7 +14,7 @@ TO SWITCH TO YOUR REAL DATASET LATER:
        number here.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
 
@@ -97,3 +97,17 @@ class Config:
         self.data_root = Path(self.data_root)
         self.output_root = Path(self.output_root)
         self.output_root.mkdir(parents=True, exist_ok=True)
+
+    def to_dict(self) -> dict:
+        """
+        Full snapshot of every setting for this run — this is what makes
+        a logged run REPRODUCIBLE. Paths are converted to strings so this
+        is directly JSON-serializable (asdict() alone chokes on Path
+        objects otherwise).
+        """
+        d = asdict(self)
+        d["data_root"] = str(self.data_root)
+        d["output_root"] = str(self.output_root)
+        return d
+
+

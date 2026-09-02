@@ -156,6 +156,20 @@ class ExperimentRunner:
                     "backbone": backbone_name,
                     "seed": seed,
                     "training_mode": self.config.training_mode,
+                    # ---- hyperparameters — this is what makes the CSV
+                    # useful for "which settings gave the best result?"
+                    # without having to open each run's individual JSON ----
+                    "learning_rate": self.config.learning_rate,
+                    "weight_decay": self.config.weight_decay,
+                    "optimizer": self.config.optimizer_name,
+                    "lr_scheduler": self.config.lr_scheduler,
+                    "batch_size": self.config.batch_size,
+                    "image_size": self.config.image_size,
+                    "head_hidden_dim": self.config.head_hidden_dim,
+                    "head_dropout": self.config.head_dropout,
+                    "finetune_unfreeze_last_n_blocks": self.config.finetune_unfreeze_last_n_blocks,
+                    "imbalance_strategy": self.config.imbalance_strategy,
+                    # ---- results ----
                     "accuracy": test_metrics["accuracy"],
                     "precision_macro": test_metrics["precision_macro"],
                     "recall_macro": test_metrics["recall_macro"],
