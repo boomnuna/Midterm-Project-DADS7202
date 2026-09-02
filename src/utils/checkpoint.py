@@ -17,7 +17,7 @@ runtime reset — see colab_utils.py for pointing this at Google Drive.
 from pathlib import Path
 import torch
 
-
+# Checkpoint   
 class CheckpointManager:
     def __init__(self, checkpoint_root: Path, run_id: str):
         self.dir = Path(checkpoint_root) / run_id
@@ -25,6 +25,7 @@ class CheckpointManager:
         self.latest_path = self.dir / "latest.pt"
         self.best_path = self.dir / "best.pt"
 
+    # save training progress 
     def _save(self, path: Path, epoch: int, model, optimizer, scheduler,
               history: dict, best_val_loss: float, epochs_without_improvement: int):
         payload = {
@@ -42,21 +43,26 @@ class CheckpointManager:
         torch.save(payload, tmp_path)
         tmp_path.replace(path)
 
+    # save lastest epoch
     def save_latest(self, epoch, model, optimizer, scheduler, history,
                      best_val_loss, epochs_without_improvement):
         self._save(self.latest_path, epoch, model, optimizer, scheduler,
                    history, best_val_loss, epochs_without_improvement)
 
+    # save best epoch 
     def save_best(self, epoch, model, optimizer, scheduler, history,
                   best_val_loss, epochs_without_improvement):
         self._save(self.best_path, epoch, model, optimizer, scheduler,
                    history, best_val_loss, epochs_without_improvement)
 
+    # check checkpoint exist 
     def has_checkpoint(self) -> bool:
         return self.latest_path.exists()
 
+    # load lastest checkpoint 
     def load_latest(self, map_location="cpu") -> dict:
         return torch.load(self.latest_path, map_location=map_location, weights_only=False)
 
+    # load best checkpoint
     def load_best(self, map_location="cpu") -> dict:
         return torch.load(self.best_path, map_location=map_location, weights_only=False)

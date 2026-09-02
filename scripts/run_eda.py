@@ -16,6 +16,7 @@ from src.data.dataset import DataModule
 from src.data.eda import EDAAnalyzer
 
 
+# run full pipeline for EDA data 
 def main():
     config = Config()
     data_module = DataModule(config)

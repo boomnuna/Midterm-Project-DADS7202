@@ -21,7 +21,6 @@ import argparse
 import csv
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-
 from config import Config
 
 
