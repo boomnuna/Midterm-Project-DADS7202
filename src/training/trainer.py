@@ -31,7 +31,7 @@ class Trainer:
         self.wandb_run = wandb_run                     # active wandb run, or None
         self.checkpoint_manager = checkpoint_manager   # CheckpointManager, or None -> no resume support
 
-        self._apply_training_mode()
+        self._apply_training_mode() # freeze bbackbone or not 
 
         weight_tensor = class_weights.to(self.device) if class_weights is not None else None
         self.criterion = nn.CrossEntropyLoss(weight=weight_tensor)
@@ -40,6 +40,7 @@ class Trainer:
 
         self.history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
 
+    # show log message 
     def _log(self, msg: str):
         if self.logger is not None:
             self.logger.info(msg)
@@ -47,15 +48,17 @@ class Trainer:
             print(msg)
 
     # ------------------------------------------------------------
+    # freeze backbone or not 
     def _apply_training_mode(self):
         if self.config.training_mode == "feature_extract":
             self.model.freeze_backbone(fully=True)
         elif self.config.training_mode == "finetune":
-            self.model.freeze_backbone(fully=True)
-            self.model.unfreeze_last_n_blocks(self.config.finetune_unfreeze_last_n_blocks)
+            self.model.freeze_backbone(fully=True) # reset everything back to freeze 
+            self.model.unfreeze_last_n_blocks(self.config.finetune_unfreeze_last_n_blocks) # then unfreeze later 
         else:
             raise ValueError(f"Unknown training_mode: {self.config.training_mode}")
 
+    # choose optimizer type
     def _build_optimizer(self):
         trainable_params = [p for p in self.model.parameters() if p.requires_grad]
         if self.config.optimizer_name == "adamw":
@@ -66,6 +69,7 @@ class Trainer:
                        momentum=0.9, weight_decay=self.config.weight_decay)
         raise ValueError(f"Unknown optimizer_name: {self.config.optimizer_name}")
 
+    # choose learning rate schedule 
     def _build_scheduler(self):
         if self.config.lr_scheduler == "cosine":
             return CosineAnnealingLR(self.optimizer, T_max=self.config.num_epochs)
@@ -74,30 +78,35 @@ class Trainer:
         return None
 
     # ------------------------------------------------------------
+    # run epoch for train and test 
     def _run_epoch(self, loader, train: bool):
+        # set model to train or validation mode 
         self.model.train() if train else self.model.eval()
+        # init metrics
         total_loss, correct, total = 0.0, 0, 0
 
-        with torch.set_grad_enabled(train):
-            for images, labels in loader:
-                images, labels = images.to(self.device), labels.to(self.device)
+
+        with torch.set_grad_enabled(train): # enable/disable gradient calculation
+            for images, labels in loader: # loader = num batch size 
+                images, labels = images.to(self.device), labels.to(self.device) # move data to GPU/CPU
 
                 if train:
-                    self.optimizer.zero_grad()
-                outputs = self.model(images)
-                loss = self.criterion(outputs, labels)
+                    self.optimizer.zero_grad() # clear old gradients
+                outputs = self.model(images) # forward pass 
+                loss = self.criterion(outputs, labels) # calculate loss 
 
                 if train:
-                    loss.backward()
-                    self.optimizer.step()
+                    loss.backward() # get gradient 
+                    self.optimizer.step() # update weight 
 
-                total_loss += loss.item() * images.size(0)
+                total_loss += loss.item() * images.size(0) 
                 correct += (outputs.argmax(dim=1) == labels).sum().item()
                 total += images.size(0)
 
         return total_loss / total, correct / total
 
     # ------------------------------------------------------------
+    # resuming training from a checkpoint if training was interrupted.
     def _try_resume(self):
         """
         Returns (start_epoch, best_val_loss, epochs_without_improvement).
@@ -105,24 +114,29 @@ class Trainer:
         fresh-start defaults — this makes fit() work identically whether
         or not checkpointing is enabled.
         """
+        # check if a checkpoint exists
         if self.checkpoint_manager is None or not self.checkpoint_manager.has_checkpoint():
             return 0, float("inf"), 0
-
+        
+        # load the latest checkpoint
         ckpt = self.checkpoint_manager.load_latest(map_location=self.device)
-        self.model.load_state_dict(ckpt["model_state"])
-        self.optimizer.load_state_dict(ckpt["optimizer_state"])
-        if self.scheduler is not None and ckpt["scheduler_state"] is not None:
+        self.model.load_state_dict(ckpt["model_state"]) # restore the model
+        self.optimizer.load_state_dict(ckpt["optimizer_state"]) # restore the optimizer 
+        if self.scheduler is not None and ckpt["scheduler_state"] is not None: # restore the scheduler
             self.scheduler.load_state_dict(ckpt["scheduler_state"])
         self.history = ckpt["history"]
 
-        start_epoch = ckpt["epoch"] + 1
+        start_epoch = ckpt["epoch"] + 1 # set the next epoch
         self._log(f"RESUMED from checkpoint at epoch {ckpt['epoch']} "
                   f"-> continuing from epoch {start_epoch + 1}")
         return start_epoch, ckpt["best_val_loss"], ckpt["epochs_without_improvement"]
 
+    # model fitting 
     def fit(self, train_loader, val_loader, verbose: bool = True):
+        # try to resume 
         start_epoch, best_val_loss, epochs_without_improvement = self._try_resume()
 
+        # epoch reached 
         if start_epoch >= self.config.num_epochs:
             self._log(f"Checkpoint already reached target num_epochs="
                       f"{self.config.num_epochs} — nothing to train, returning existing history.")
@@ -142,6 +156,7 @@ class Trainer:
             self.history["val_loss"].append(val_loss)
             self.history["val_acc"].append(val_acc)
 
+            # print result or not
             if verbose:
                 if self.logger is not None:
                     self.logger.log_epoch(epoch + 1, train_loss, train_acc, val_loss, val_acc)
@@ -157,6 +172,7 @@ class Trainer:
                     "val_loss": val_loss, "val_acc": val_acc,
                 })
 
+            # for early stopping record 
             improved = val_loss < best_val_loss
             if improved:
                 best_val_loss = val_loss

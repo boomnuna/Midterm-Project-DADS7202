@@ -1,4 +1,8 @@
 """
+How good is my trained model?”
+"""
+
+"""
 src/evaluation/metrics.py
 
 Evaluator computes the full metric set the assignment asks for:
@@ -13,30 +17,34 @@ from sklearn.metrics import (
 )
 import matplotlib.pyplot as plt
 
-
+# create evaluator
 class Evaluator:
     def __init__(self, class_names: list):
         self.class_names = class_names
 
-    @torch.no_grad()
+    # get prediction value 
+    @torch.no_grad() # tell to don't calculate gradients.
     def _collect_predictions(self, model, loader, device):
         model.eval()
         all_preds, all_labels = [], []
-        for images, labels in loader:
+        for images, labels in loader: # loop through dataset 
             images = images.to(device)
-            outputs = model(images)
-            preds = outputs.argmax(dim=1).cpu().numpy()
+            outputs = model(images) # model makes predictions
+            preds = outputs.argmax(dim=1).cpu().numpy() # get predict class
             all_preds.extend(preds)
             all_labels.extend(labels.numpy())
         return np.array(all_labels), np.array(all_preds)
 
+    # 
     def evaluate(self, model, loader, device) -> dict:
-        y_true, y_pred = self._collect_predictions(model, loader, device)
+        y_true, y_pred = self._collect_predictions(model, loader, device) # prediction
 
         accuracy = accuracy_score(y_true, y_pred)
+        # show precision/recall/F1 score for all class(good for imbalance dataset).
         precision_macro, recall_macro, f1_macro, _ = precision_recall_fscore_support(
             y_true, y_pred, average="macro", zero_division=0
         )
+        # show precision/recall/F1 score for each class.
         precision_per_class, recall_per_class, f1_per_class, support_per_class = (
             precision_recall_fscore_support(y_true, y_pred, average=None, zero_division=0)
         )
@@ -53,11 +61,13 @@ class Evaluator:
             "support_per_class": dict(zip(self.class_names, support_per_class)),
             "confusion_matrix": cm,
         }
-
+    
+    # basically a convenient way to print a standard classification report.
     def print_classification_report(self, model, loader, device):
         y_true, y_pred = self._collect_predictions(model, loader, device)
         print(classification_report(y_true, y_pred, target_names=self.class_names, zero_division=0))
 
+    # show confusion matrix 
     def plot_confusion_matrix(self, confusion_mat, title: str, save_path=None):
         fig, ax = plt.subplots(figsize=(6, 5))
         im = ax.imshow(confusion_mat, cmap="Blues")
@@ -81,6 +91,7 @@ class Evaluator:
             print(f"Saved confusion matrix to {save_path}")
         plt.close(fig)
 
+    # plot acc & loss from training progress
     def plot_training_curves(self, history: dict, title: str, save_path=None):
         """Loss/accuracy curves — for spotting overfit/underfit per the assignment."""
         fig, axes = plt.subplots(1, 2, figsize=(10, 4))

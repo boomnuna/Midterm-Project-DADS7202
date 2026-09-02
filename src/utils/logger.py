@@ -23,7 +23,7 @@ import logging
 from pathlib import Path
 from datetime import datetime
 
-
+# records what happened during each experiment
 class ExperimentLogger:
     def __init__(self, output_root: Path, run_id: str):
         self.output_root = Path(output_root)
@@ -88,3 +88,24 @@ class ExperimentLogger:
         with open(path, "w") as f:
             json.dump(data, f, indent=2, default=str)
         self.info(f"Saved {path}")
+
+
+
+"""
+  ExperimentRunner
+                          │
+                          ↓
+                       Trainer
+                          │
+                ┌─────────┴─────────┐
+                ↓                   ↓
+           Train model         Evaluate model
+                │                   │
+                └─────────┬─────────┘
+                          ↓
+                   ExperimentLogger
+                          │
+             ┌────────────┼────────────┐
+             ↓            ↓            ↓
+          .log file   CSV summary    JSON
+"""

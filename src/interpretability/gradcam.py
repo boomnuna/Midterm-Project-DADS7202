@@ -1,4 +1,8 @@
 """
+“Why did my CNN make this prediction?”
+"""
+
+"""
 src/interpretability/gradcam.py
 
 Grad-CAM (Selvaraju et al. 2017) implementation via forward/backward
@@ -16,8 +20,11 @@ import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 
-
+# visualize Grad-Cam
 class GradCAM:
+    """
+    Grad-CAM = Gradient-weighted Class Activation Mapping
+    """
     def __init__(self, model, device=None):
         self.model = model
         self.device = device or next(model.parameters()).device
@@ -27,16 +34,19 @@ class GradCAM:
         self.gradients = None
         self._register_hooks()
 
+    # tell PyTorch to capture information from the target layer during forward and backward passes.
     def _register_hooks(self):
+        # captures feature maps produced by the target layer
         def forward_hook(module, input, output):
             self.activations = output.detach()
-
+        # captures the gradients
         def backward_hook(module, grad_input, grad_output):
             self.gradients = grad_output[0].detach()
 
         self.target_layer.register_forward_hook(forward_hook)
         self.target_layer.register_full_backward_hook(backward_hook)
 
+    # 
     def generate(self, input_tensor: torch.Tensor, target_class: int = None):
         """
         input_tensor: single image, shape (1, C, H, W), already normalized
@@ -46,16 +56,18 @@ class GradCAM:
 
         Returns: (heatmap as HxW numpy array in [0,1], predicted_class_idx)
         """
-        self.model.eval()
-        input_tensor = input_tensor.to(self.device)
+        self.model.eval() 
 
+        input_tensor = input_tensor.to(self.device)
         output = self.model(input_tensor)
+
         if target_class is None:
             target_class = output.argmax(dim=1).item()
 
         self.model.zero_grad()
+        
         score = output[0, target_class]
-        score.backward()
+        score.backward() # calculate gradient 
 
         # weight each activation channel by the average gradient flowing
         # into it — this is the core Grad-CAM weighting step
@@ -63,11 +75,13 @@ class GradCAM:
         weighted_activations = (weights * self.activations).sum(dim=1, keepdim=True)  # (1, 1, H, W)
         heatmap = F.relu(weighted_activations).squeeze().cpu().numpy()
 
+        # normalize the heatmap
         if heatmap.max() > 0:
             heatmap = heatmap / heatmap.max()
 
         return heatmap, target_class
 
+    # convert heatmap to colors 
     @staticmethod
     def overlay_heatmap(raw_image: np.ndarray, heatmap: np.ndarray, alpha: float = 0.4):
         """
@@ -91,6 +105,7 @@ class GradCAM:
         overlay = (1 - alpha) * raw_image + alpha * heatmap_resized
         return np.clip(overlay, 0, 1)
 
+    # full pipeline for visualize  
     def visualize(self, input_tensor: torch.Tensor, raw_image: np.ndarray,
                   class_names: list, target_class: int = None, save_path=None):
         """Convenience: generate + overlay + side-by-side plot in one call."""

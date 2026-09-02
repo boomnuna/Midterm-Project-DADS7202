@@ -52,9 +52,11 @@ class ExperimentRunner:
             print("WARNING: config.use_wandb=True but the 'wandb' package isn't installed. "
                   "Run `pip install wandb` or set use_wandb=False. Continuing without W&B.")
 
+    # metrics file path
     def _completed_metrics_path(self, run_id: str) -> Path:
         return self.config.output_root / "logs" / f"{run_id}_metrics.json"
 
+    # load metrics file path
     def _load_completed_run(self, run_id: str) -> dict:
         """Loads a previously-saved run's metrics (without confusion_matrix/
         history, which weren't saved to JSON — see log_run_summary usage
@@ -65,39 +67,44 @@ class ExperimentRunner:
         with open(self._completed_metrics_path(run_id)) as f:
             return json.load(f)
 
+
     def run_all(self, keep_last_model: bool = True):
+        # calculate class-weights
         class_weights = None
         if self.config.imbalance_strategy == "class_weights":
             class_weights = self.data_module.class_weights()
 
+        # loop through each transfer model
         for backbone_name in self.config.backbone_names:
             print(f"\n{'=' * 60}\nArchitecture: {backbone_name}\n{'=' * 60}")
-            self.results[backbone_name] = []
+            self.results[backbone_name] = [] # prepare result storage
 
-            for repeat_i in range(self.config.num_repeats):
-                seed = self.config.base_seed + repeat_i
+            for repeat_i in range(self.config.num_repeats): # repeat each experiment
+                seed = self.config.base_seed + repeat_i # create different seeds
                 run_id = f"{backbone_name}_seed{seed}"
 
                 # ---- RESUME CHECK: was this run already completed in a
                 # previous (now-disconnected) session? ----
-                if self._completed_metrics_path(run_id).exists():
+                if self._completed_metrics_path(run_id).exists(): # check whether this experiment already finished
                     print(f"\n--- {run_id} — already completed, loading saved result, skipping retrain ---")
                     self.results[backbone_name].append(self._load_completed_run(run_id))
                     continue
 
                 print(f"\n--- {run_id} ---")
-                set_seed(seed)
+                set_seed(seed) # makes experiment reproducible.
 
-                logger = ExperimentLogger(self.config.output_root, run_id)
+                logger = ExperimentLogger(self.config.output_root, run_id) # create logger
                 logger.info(f"Starting run: backbone={backbone_name} seed={seed} "
                             f"training_mode={self.config.training_mode}")
 
-                checkpoint_manager = CheckpointManager(
+                # create checkpoint manager
+                checkpoint_manager = CheckpointManager( 
                     self.config.output_root / "checkpoints", run_id
                 )
                 if checkpoint_manager.has_checkpoint():
                     logger.info("Found existing checkpoint for this run — will resume from it.")
 
+                # (Optional) Weights & Biases
                 wandb_run = None
                 if self.config.use_wandb and _WANDB_AVAILABLE:
                     wandb_run = wandb.init(
@@ -116,6 +123,7 @@ class ExperimentRunner:
                         reinit=True,
                     )
 
+                # create the CNN model
                 model = CNNClassifier(
                     backbone_name=backbone_name,
                     num_classes=self.data_module.num_classes,
@@ -123,19 +131,26 @@ class ExperimentRunner:
                     head_dropout=self.config.head_dropout,
                 )
 
+                # create the Trainer
                 trainer = Trainer(model, self.config, class_weights=class_weights,
                                    logger=logger, wandb_run=wandb_run,
                                    checkpoint_manager=checkpoint_manager)
+
+                # train the model
                 history = trainer.fit(
                     self.data_module.train_loader(),
                     self.data_module.val_loader(),
                 )
 
+                # evaluate on test set
                 evaluator = Evaluator(self.data_module.class_names)
                 test_metrics = evaluator.evaluate(model, self.data_module.test_loader(), trainer.device)
+
+                # save training history
                 test_metrics["history"] = history
                 test_metrics["seed"] = seed
 
+                # create summary
                 summary_row = {
                     "run_id": run_id,
                     "backbone": backbone_name,
@@ -155,11 +170,13 @@ class ExperimentRunner:
                 # after training fully finishes, so a run interrupted
                 # mid-training will correctly be seen as NOT completed
                 # (and will resume via its checkpoint instead).
+
+                # save metrics to JSON
                 logger.save_json(
                     {k: v for k, v in test_metrics.items() if k not in ("confusion_matrix", "history")},
                     filename=f"{run_id}_metrics.json",
                 )
-
+                # sends final test metrics to W&B and closes the experiment.
                 if wandb_run is not None:
                     wandb_run.log({
                         "final_test_accuracy": test_metrics["accuracy"],
@@ -167,9 +184,63 @@ class ExperimentRunner:
                     })
                     wandb_run.finish()
 
+                # store results in memory
                 self.results[backbone_name].append(test_metrics)
 
+                # keep the last model
                 if keep_last_model:
                     self.last_models[backbone_name] = model
 
         return self.results
+
+
+"""
+## Pipeline Conclusion
+
+              run_all()
+                       │
+          ┌────────────┴────────────┐
+          │                         │
+    Backbone 1                Backbone 2
+    ResNet18                 EfficientNet
+          │                         │
+    ┌─────┼─────┐             ┌─────┼─────┐
+    ↓     ↓     ↓             ↓     ↓     ↓
+ Seed42 Seed43 Seed44       Seed42 Seed43 Seed44
+    │     │     │             │     │     │
+    ↓     ↓     ↓             ↓     ↓     ↓
+  Trainer Trainer Trainer   Trainer Trainer Trainer
+    │
+    ↓
+  fit()
+    │
+    ├── _try_resume()
+    │       │
+    │       └── load_latest() ← checkpoint
+    │
+    ├── train epoch
+    ├── validation
+    ├── save checkpoint
+    └── repeat
+    │
+    ↓
+  Test evaluation
+    │
+    ↓
+  Save metrics JSON
+    │
+    ↓
+  self.results
+"""
+
+"""
+This code automatically
+1. Tries multiple CNN architectures
+2. Repeats each architecture with different random seeds
+3. Resumes interrupted experiments from checkpoints
+4. Trains the model
+5. Evaluates on the test set
+6. Saves metrics
+6. Logs to Weights & Biases if enabled
+7. Keeps the trained model if requested
+"""

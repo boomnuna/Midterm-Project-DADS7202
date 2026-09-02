@@ -5,7 +5,7 @@ import random
 import numpy as np
 import torch
 
-
+# set seed for reproduceable 
 def set_seed(seed: int):
     """
     Set every RNG this project touches. Called once per repeated run

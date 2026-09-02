@@ -19,7 +19,7 @@ Drive so it survived the disconnect.
 
 from pathlib import Path
 
-
+# check using Google Collab
 def is_colab() -> bool:
     try:
         import google.colab  # noqa: F401
@@ -27,7 +27,7 @@ def is_colab() -> bool:
     except ImportError:
         return False
 
-
+# mount to google drive 
 def mount_drive(mount_point: str = "/content/drive") -> str | None:
     """
     Call this ONCE at the very top of your Colab notebook, before
@@ -43,8 +43,8 @@ def mount_drive(mount_point: str = "/content/drive") -> str | None:
     print(f"Drive mounted at {mount_point}")
     return mount_point
 
-
-def colab_output_root(drive_subfolder: str = "MyDrive/dl_hw_project_outputs") -> str:
+# create output folder if not exist
+def colab_output_root(drive_subfolder: str = "MyDrive/Midterm-Project-DADS7202") -> str:
     """
     Returns the path to use as config.output_root.
       - in Colab: a folder INSIDE the mounted Drive (survives disconnects)
@@ -58,7 +58,7 @@ def colab_output_root(drive_subfolder: str = "MyDrive/dl_hw_project_outputs") ->
         return path
     return "outputs"
 
-
+# (Optional)
 def print_colab_session_tips():
     """
     Call this once after setup, just to print a checklist on-screen at
