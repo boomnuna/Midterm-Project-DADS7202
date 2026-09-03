@@ -18,18 +18,22 @@ from src.data.eda import EDAAnalyzer
 
 # run full pipeline for EDA data 
 def main():
+    print("-"*70)
     config = Config()
     data_module = DataModule(config)
 
     print(f"Classes found: {data_module.class_names}")
-    print(f"Number of classes: {data_module.num_classes}\n")
+    print(f"Number of classes: {data_module.num_classes}")
+    print("-"*70)
 
     analyzer = EDAAnalyzer(config.data_root, data_module.class_names)
     report = analyzer.analyze()
     analyzer.print_summary(report)
 
+    print("plotting graph...")
     plot_path = config.output_root / "eda_summary.png"
     analyzer.plot_summary(report, save_path=plot_path)
+    print("-"*70)
 
 
 if __name__ == "__main__":
