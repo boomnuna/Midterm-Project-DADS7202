@@ -27,7 +27,7 @@ class Config:
     output_root: Path = Path("outputs")
 
     # ---- image / dataloader ----
-    image_size: int = 224          # standard input size for most torchvision backbones
+    image_size: int = 224 # standard input size for most torchvision backbones
     batch_size: int = 64
     num_workers: int = 4
 
@@ -93,11 +93,13 @@ class Config:
     # database instead (e.g. "mysql://..." or "postgresql://...") —
     # see README for why W&B Sweep is usually the easier group option.
 
+    # automaticly run when you create object 
     def __post_init__(self):
         self.data_root = Path(self.data_root)
         self.output_root = Path(self.output_root)
         self.output_root.mkdir(parents=True, exist_ok=True)
 
+    # convert all config to dictoinary for easy to retrain 
     def to_dict(self) -> dict:
         """
         Full snapshot of every setting for this run — this is what makes

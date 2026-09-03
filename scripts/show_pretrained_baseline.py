@@ -23,7 +23,7 @@ from torchvision.models import ResNet50_Weights
 from config import Config
 from src.data.dataset import DataModule
 
-
+# get all 1000 imagenet class name 
 def load_imagenet_class_names():
     weights = ResNet50_Weights.IMAGENET1K_V2
     return weights.meta["categories"]
@@ -35,10 +35,10 @@ def main():
     imagenet_classes = load_imagenet_class_names()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V2).to(device)
+    model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V2).to(device) # call pre-trained model
     model.eval()
 
-    loader = data_module.test_loader()
+    loader = data_module.test_loader() # load test data
     print("Pretrained ResNet50 (ImageNet, untouched) predictions on OUR dataset:\n")
     print(f"{'true class (ours)':25s} | top-1 ImageNet prediction")
     print("-" * 70)

@@ -24,8 +24,9 @@ from config import Config
 from src.data.dataset import DataModule
 from src.training.hyperparameter_tuning import OptunaTuner
 
-
+# run hyperparameter tuning with Optuna
 def main():
+    # allow to pass argument when run python 
     parser = argparse.ArgumentParser()
     parser.add_argument("--backbone", required=True)
     parser.add_argument("--n-trials", type=int, default=None)
@@ -33,10 +34,16 @@ def main():
     parser.add_argument("--study-name", default=None)
     args = parser.parse_args()
 
+    # create config
     config = Config()
+
+    # load dataset 
     data_module = DataModule(config)
 
+    # create Optuna tuner
     tuner = OptunaTuner(config, data_module, backbone_name=args.backbone)
+
+    # run Optuna hyperparameter search 
     best_params = tuner.run(n_trials=args.n_trials, storage=args.storage, study_name=args.study_name)
 
     out_path = config.output_root / f"best_params_{args.backbone}.json"

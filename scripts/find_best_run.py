@@ -25,34 +25,40 @@ from config import Config
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--metric", default="accuracy",
+    parser = argparse.ArgumentParser() # This allows you to run the script like: python find_best.py --metric accuracy
+    parser.add_argument("--metric", default="accuracy", # which metrics you use to  define best  
                          help="Which column in experiment_log.csv to maximize (default: accuracy)")
-    parser.add_argument("--backbone", default=None,
+    parser.add_argument("--backbone", default=None, # restrict the search that make you can run one CNN backbone for each time.
                          help="Restrict search to one backbone (default: search across all)")
-    args = parser.parse_args()
+    args = parser.parse_args() # parse the arguments
 
     config = Config()
-    csv_path = config.output_root / "experiment_log.csv"
+    csv_path = config.output_root / "experiment_log.csv" # log file path
 
+    # if no excel file
     if not csv_path.exists():
         print(f"No {csv_path} found yet — run some experiments first "
               f"(train_single.py or run_all_experiments.py).")
         return
 
+    # read file 
     with open(csv_path) as f:
         rows = list(csv.DictReader(f))
 
+    # in-case you run 'python find_best.py --backbone resnet50' it will filter only 'resnet50'
     if args.backbone:
         rows = [r for r in rows if r["backbone"] == args.backbone]
 
+    # if it empty file 
     if not rows:
         print("No matching rows found in experiment_log.csv.")
         return
 
+    # find best row 
     best_row = max(rows, key=lambda r: float(r[args.metric]))
     run_id = best_row["run_id"]
 
+    # print best result
     print("=" * 60)
     print(f"BEST RUN by {args.metric}: {run_id}")
     print("=" * 60)
@@ -61,6 +67,8 @@ def main():
     print(f"  seed          = {best_row['seed']}")
 
     config_path = config.output_root / "logs" / f"{run_id}_config.json"
+
+    # if config path not exist 
     if not config_path.exists():
         print(f"\nNOTE: {config_path} not found — this run predates the "
               f"full-config logging update, or its logs were deleted. "
@@ -68,6 +76,7 @@ def main():
               f"for this specific run can't be recovered.")
         return
 
+    # load config file with match best result  
     with open(config_path) as f:
         run_config = json.load(f)
 
@@ -87,3 +96,21 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+"""
+experiment_log.csv
+       ↓
+Filter by backbone (optional)
+       ↓
+Find highest accuracy
+       ↓
+Get run_id
+       ↓
+Load {run_id}_config.json
+       ↓
+Print the configuration
+       ↓
+Tell you how to retrain it
+"""

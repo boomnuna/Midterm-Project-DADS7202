@@ -33,41 +33,54 @@ from src.models.classifier import CNNClassifier
 from src.training.trainer import Trainer
 from src.evaluation.metrics import Evaluator
 
-
+# run hyperparameter tuning with Weights & Biases (W&B) Sweeps 
 def main():
+    # start Weights & Biases 
     run = wandb.init()
     sweep_config = run.config  # hyperparameters sampled by the sweep controller
 
+    # load defualt configuration 
     config = Config()
+
+    # repalce these value with W&B's value 
     config.learning_rate = sweep_config.get("learning_rate", config.learning_rate)
     config.weight_decay = sweep_config.get("weight_decay", config.weight_decay)
     config.head_dropout = sweep_config.get("head_dropout", config.head_dropout)
     config.head_hidden_dim = sweep_config.get("head_hidden_dim", config.head_hidden_dim)
     config.optimizer_name = sweep_config.get("optimizer_name", config.optimizer_name)
-    config.num_epochs = config.optuna_quick_epochs  # keep sweep trials short, same idea as Optuna path
-    backbone_name = sweep_config.get("backbone_name", config.backbone_names[0])
+    # keep sweep trials short, same idea as Optuna path
+    config.num_epochs = config.optuna_quick_epochs  
+    backbone_name = sweep_config.get("backbone_name", config.backbone_names[0]) # choose backbone 
 
+    # set seed 
     set_seed(config.base_seed)
+
+    # load dataset
     data_module = DataModule(config)
 
+    # check class distribution
     class_weights = None
     if config.imbalance_strategy == "class_weights":
         class_weights = data_module.class_weights()
 
+    # create CNN
     model = CNNClassifier(
         backbone_name, data_module.num_classes,
         head_hidden_dim=config.head_hidden_dim, head_dropout=config.head_dropout,
     )
 
+    # create Trainer
     trainer = Trainer(model, config, class_weights=class_weights, wandb_run=run)
+    # train model
     trainer.fit(data_module.train_loader(), data_module.val_loader())
 
+    # evaluation 
     evaluator = Evaluator(data_module.class_names)
     val_metrics = evaluator.evaluate(model, data_module.val_loader(), trainer.device)
 
     # this is the metric name declared in wandb_sweep.yaml's `metric.name`
-    run.log({"val_accuracy": val_metrics["accuracy"]})
-    run.finish()
+    run.log({"val_accuracy": val_metrics["accuracy"]}) # send validation accuracy back to W&B
+    run.finish() # finish the W&B run
 
 
 if __name__ == "__main__":
