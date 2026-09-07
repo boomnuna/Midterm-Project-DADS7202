@@ -29,7 +29,7 @@ class Config:
     # ---- image / dataloader ----
     image_size: int = 224 # standard input size for most torchvision backbones
     batch_size: int = 64
-    num_workers: int = 4
+    num_workers: int = 2
 
     # ---- train/val/test split (used only if your data_root has no
     # pre-made train/val/test subfolders yet — see data/dataset.py) ----

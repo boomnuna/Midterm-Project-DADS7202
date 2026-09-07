@@ -96,6 +96,7 @@ def main():
     evaluator.print_classification_report(model, data_module.test_loader(), trainer.device)
 
     # plot training resuult 
+    print("-" * 70)
     out_dir = config.output_root / args.backbone
     out_dir.mkdir(parents=True, exist_ok=True)
     evaluator.plot_training_curves(history, title=args.backbone, save_path=out_dir / "training_curves.png")
