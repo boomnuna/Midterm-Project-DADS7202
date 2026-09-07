@@ -1,11 +1,10 @@
 __pycache__/
 *.pyc
-venv/
-.venv/
-outputs/
-/data/
 *.pkl
 *.pth
 .DS_Store
 .ipynb_checkpoints/
+
+# folder
+/data/
 BACKUP/
