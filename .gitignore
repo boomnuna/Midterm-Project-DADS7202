@@ -3,7 +3,7 @@ __pycache__/
 venv/
 .venv/
 outputs/
-data/
+/data/
 *.pkl
 *.pth
 .DS_Store
