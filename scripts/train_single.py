@@ -79,9 +79,13 @@ def main():
     trainer = Trainer(model, config, class_weights=class_weights, logger=logger,
                        checkpoint_manager=checkpoint_manager)
     # fit model
+    print("-" * 70)
+    print("Starting model training...")
     history = trainer.fit(data_module.train_loader(), data_module.val_loader())
 
     # evaluation 
+    print("-" * 70)
+    print("Starting model evaluation...")
     evaluator = Evaluator(data_module.class_names)
     # evaluation in test dataset 
     test_metrics = evaluator.evaluate(model, data_module.test_loader(), trainer.device)

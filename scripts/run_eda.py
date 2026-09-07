@@ -26,6 +26,7 @@ def main():
     print(f"Number of classes: {data_module.num_classes}")
     print("-"*70)
 
+    print("Starting dataset analysis...")
     analyzer = EDAAnalyzer(config.data_root, data_module.class_names)
     report = analyzer.analyze()
     analyzer.print_summary(report)

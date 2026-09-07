@@ -17,7 +17,7 @@ runtime reset — see colab_utils.py for pointing this at Google Drive.
 from pathlib import Path
 import torch
 
-# Checkpoint   
+# Checkpoint
 class CheckpointManager:
     def __init__(self, checkpoint_root: Path, run_id: str):
         self.dir = Path(checkpoint_root) / run_id
@@ -27,7 +27,8 @@ class CheckpointManager:
 
     # save training progress 
     def _save(self, path: Path, epoch: int, model, optimizer, scheduler,
-              history: dict, best_val_loss: float, epochs_without_improvement: int):
+              history: dict, best_val_loss: float, epochs_without_improvement: int,
+              elapsed_seconds: float = 0.0):
         payload = {
             "epoch": epoch,
             "model_state": model.state_dict(),
@@ -36,6 +37,8 @@ class CheckpointManager:
             "history": history,
             "best_val_loss": best_val_loss,
             "epochs_without_improvement": epochs_without_improvement,
+            "elapsed_seconds": elapsed_seconds,  # cumulative training time so far,
+                                                 # across resumes — see Trainer._try_resume
         }
         # save to a temp file then rename — avoids a corrupted checkpoint
         # if the runtime dies mid-write (rename is effectively atomic)
@@ -45,15 +48,15 @@ class CheckpointManager:
 
     # save lastest epoch
     def save_latest(self, epoch, model, optimizer, scheduler, history,
-                     best_val_loss, epochs_without_improvement):
+                     best_val_loss, epochs_without_improvement, elapsed_seconds=0.0):
         self._save(self.latest_path, epoch, model, optimizer, scheduler,
-                   history, best_val_loss, epochs_without_improvement)
+                   history, best_val_loss, epochs_without_improvement, elapsed_seconds)
 
     # save best epoch 
     def save_best(self, epoch, model, optimizer, scheduler, history,
-                  best_val_loss, epochs_without_improvement):
+                  best_val_loss, epochs_without_improvement, elapsed_seconds=0.0):
         self._save(self.best_path, epoch, model, optimizer, scheduler,
-                   history, best_val_loss, epochs_without_improvement)
+                   history, best_val_loss, epochs_without_improvement, elapsed_seconds)
 
     # check checkpoint exist 
     def has_checkpoint(self) -> bool:

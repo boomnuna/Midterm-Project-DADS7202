@@ -1,0 +1,8 @@
+1.run_eda.py
+>> show all dataset information ex. number of image, image size ,image size, etc. 
+
+2.show_pretrained_baseline.py
+>> show pre-trained model prediction result(class) on our dataset 
+
+3. train_single.py
+>> ลอง train เเค่ 1 model (ไม่ทำ hyper parameter tuning ) เพื่อทดอสอบว่า pipeline ใช้งานได้ไหม 

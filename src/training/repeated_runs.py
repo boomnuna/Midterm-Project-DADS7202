@@ -51,7 +51,6 @@ class ExperimentRunner:
         if config.use_wandb and not _WANDB_AVAILABLE:
             print("WARNING: config.use_wandb=True but the 'wandb' package isn't installed. "
                   "Run `pip install wandb` or set use_wandb=False. Continuing without W&B.")
-
     # metrics file path
     def _completed_metrics_path(self, run_id: str) -> Path:
         return self.config.output_root / "logs" / f"{run_id}_metrics.json"
@@ -66,7 +65,6 @@ class ExperimentRunner:
         sessions if you'll want those plots)."""
         with open(self._completed_metrics_path(run_id)) as f:
             return json.load(f)
-
 
     def run_all(self, keep_last_model: bool = True):
         # calculate class-weights
@@ -96,9 +94,10 @@ class ExperimentRunner:
                 logger = ExperimentLogger(self.config.output_root, run_id) # create logger
                 logger.info(f"Starting run: backbone={backbone_name} seed={seed} "
                             f"training_mode={self.config.training_mode}")
+                logger.log_config(self.config.to_dict())  # full snapshot -> reproducible later
 
                 # create checkpoint manager
-                checkpoint_manager = CheckpointManager( 
+                checkpoint_manager = CheckpointManager(
                     self.config.output_root / "checkpoints", run_id
                 )
                 if checkpoint_manager.has_checkpoint():
@@ -177,6 +176,8 @@ class ExperimentRunner:
                     "num_epochs_run": len(history["train_loss"]),
                     "final_train_loss": history["train_loss"][-1],
                     "final_val_loss": history["val_loss"][-1],
+                    "total_training_time_sec": trainer.elapsed_seconds,
+                    "avg_epoch_time_sec": sum(history["epoch_time"]) / len(history["epoch_time"]),
                 }
                 logger.log_run_summary(summary_row)
                 # NOTE: this JSON file's existence is what run_all() checks
@@ -206,55 +207,3 @@ class ExperimentRunner:
                     self.last_models[backbone_name] = model
 
         return self.results
-
-
-"""
-## Pipeline Conclusion
-
-              run_all()
-                       │
-          ┌────────────┴────────────┐
-          │                         │
-    Backbone 1                Backbone 2
-    ResNet18                 EfficientNet
-          │                         │
-    ┌─────┼─────┐             ┌─────┼─────┐
-    ↓     ↓     ↓             ↓     ↓     ↓
- Seed42 Seed43 Seed44       Seed42 Seed43 Seed44
-    │     │     │             │     │     │
-    ↓     ↓     ↓             ↓     ↓     ↓
-  Trainer Trainer Trainer   Trainer Trainer Trainer
-    │
-    ↓
-  fit()
-    │
-    ├── _try_resume()
-    │       │
-    │       └── load_latest() ← checkpoint
-    │
-    ├── train epoch
-    ├── validation
-    ├── save checkpoint
-    └── repeat
-    │
-    ↓
-  Test evaluation
-    │
-    ↓
-  Save metrics JSON
-    │
-    ↓
-  self.results
-"""
-
-"""
-This code automatically
-1. Tries multiple CNN architectures
-2. Repeats each architecture with different random seeds
-3. Resumes interrupted experiments from checkpoints
-4. Trains the model
-5. Evaluates on the test set
-6. Saves metrics
-6. Logs to Weights & Biases if enabled
-7. Keeps the trained model if requested
-"""
