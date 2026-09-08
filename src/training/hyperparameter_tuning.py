@@ -64,7 +64,7 @@ class OptunaTuner:
         trainer = Trainer(model, cfg, class_weights=class_weights)
 
         # train model
-        trainer.fit(self.data_module.train_loader(), self.data_module.val_loader(), verbose=True)
+        trainer.fit(self.data_module.train_loader(), self.data_module.val_loader(), verbose=False)
 
         # evaluate validation performance
         evaluator = Evaluator(self.data_module.class_names)
