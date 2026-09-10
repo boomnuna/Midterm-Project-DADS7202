@@ -34,17 +34,34 @@ class TransformFactory:
 
     def train_transform(self) -> transforms.Compose:
         return transforms.Compose([
-            transforms.Resize((self.image_size, self.image_size)),
             # --- augmentation operations (justify choice per-dataset in
             # your presentation — e.g. horizontal flip makes sense for
             # most objects but NOT for text/asymmetric items where left-
-            # right matters) ---
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomRotation(degrees=15),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-            transforms.RandomAffine(degrees=0, translate=(0.05, 0.05)),
+            # right matters; color jitter kept mild here since color is
+            # a key discriminative cue for some classes — see README) ---
+            transforms.RandomHorizontalFlip(p=0.5), # random do with chance 50%
+            transforms.RandomRotation(degrees=10), # do everytime but with differnt magnitude 
+            transforms.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.1), # do everytime but with differnt magnitude
+            transforms.RandomResizedCrop(self.image_size, scale=(0.8, 1.0)), # do everytime but with differnt magnitude
             transforms.ToTensor(),
             transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+        ])
+
+    # show some augmented images (for presentation)
+    def train_transform_display(self) -> transforms.Compose:
+        """
+        Same augmentation operations as train_transform(), but WITHOUT
+        ToTensor()/Normalize() — returns a PIL Image directly, viewable
+        with matplotlib. Use this only for generating before/after
+        example figures (see scripts/show_augmentation_examples.py);
+        actual training always uses train_transform() above.
+        """
+        return transforms.Compose([
+            transforms.Resize((self.image_size, self.image_size)),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomRotation(degrees=10),
+            transforms.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.1),
+            transforms.RandomResizedCrop(self.image_size, scale=(0.8, 1.0)),
         ])
 
     def eval_transform(self) -> transforms.Compose:
