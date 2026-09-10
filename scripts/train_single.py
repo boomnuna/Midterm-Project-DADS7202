@@ -75,6 +75,11 @@ def main():
     )
     print(f"Trainable parameters: {model.trainable_parameter_count():,}")
 
+    print("-" * 70)
+    print(f"Model summary ({args.backbone}):")
+    summary_text = model.summary(image_size=config.image_size)
+    logger.save_json({"model_summary": summary_text}, filename=f"{run_id}_model_summary.json")
+
     # create Trainer 
     trainer = Trainer(model, config, class_weights=class_weights, logger=logger,
                        checkpoint_manager=checkpoint_manager)

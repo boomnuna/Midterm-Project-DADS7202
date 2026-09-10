@@ -130,6 +130,15 @@ class ExperimentRunner:
                     head_dropout=self.config.head_dropout,
                 )
 
+                # print the architecture summary once per backbone (not once
+                # per repeat — same architecture every repeat, only seed
+                # differs, so repeating this 5-10x would just be noise)
+                if repeat_i == 0:
+                    print(f"\nModel summary for {backbone_name}:")
+                    summary_text = model.summary(image_size=self.config.image_size)
+                    logger.save_json({"model_summary": summary_text},
+                                     filename=f"{backbone_name}_model_summary.json")
+
                 # create the Trainer
                 trainer = Trainer(model, self.config, class_weights=class_weights,
                                    logger=logger, wandb_run=wandb_run,

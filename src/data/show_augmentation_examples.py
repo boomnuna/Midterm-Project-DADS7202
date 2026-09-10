@@ -39,9 +39,9 @@ def get_sample_paths(data_module: DataModule, num_images: int) -> list:
     per class if num_images > num_classes), pulling from the TRAIN split
     specifically — that's the split augmentation actually applies to.
     """
-    train_dataset = data_module.train_dataset
-    underlying = train_dataset.dataset if hasattr(train_dataset, "dataset") else train_dataset
-    indices = train_dataset.indices if hasattr(train_dataset, "indices") else range(len(train_dataset))
+    train_dataset = data_module.train_dataset # load traning dataset 
+    underlying = train_dataset.dataset if hasattr(train_dataset, "dataset") else train_dataset # handles the possibility that train_dataset is wrapped inside another dataset object.
+    indices = train_dataset.indices if hasattr(train_dataset, "indices") else range(len(train_dataset)) # check if the training dataset is a Subset, it has specific indexes.
 
     # group available indices by class so we can spread the sample across classes
     by_class = {}
@@ -53,11 +53,11 @@ def get_sample_paths(data_module: DataModule, num_images: int) -> list:
     class_ids = list(by_class.keys())
     i = 0
     while len(samples) < num_images and any(by_class.values()):
-        label = class_ids[i % len(class_ids)]
+        label = class_ids[i % len(class_ids)] # cycles through the classes.
         if by_class[label]:
-            idx = by_class[label].pop(0)
-            path, _ = underlying.samples[idx]
-            samples.append((path, data_module.class_names[label]))
+            idx = by_class[label].pop(0) # remove from list 
+            path, _ = underlying.samples[idx] # gets the actual image path.
+            samples.append((path, data_module.class_names[label])) # store img path and class name 
         i += 1
 
     return samples[:num_images]
@@ -65,17 +65,17 @@ def get_sample_paths(data_module: DataModule, num_images: int) -> list:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num-images", type=int, default=5,
+    parser.add_argument("--num-images", type=int, default=5, # How many different original images to select.
                          help="How many distinct source images to show (default: 5, "
                               "each gets 1 original + 4 augmented versions = 5 tiles/row)")
-    parser.add_argument("--versions-per-image", type=int, default=4,
+    parser.add_argument("--versions-per-image", type=int, default=4, # How many augmented versions to generate for each original image.
                          help="How many different augmented versions to show per image (default: 4)")
     args = parser.parse_args()
 
     config = Config()
     data_module = DataModule(config)
 
-    display_transform = TransformFactory(config.image_size).train_transform_display()
+    display_transform = TransformFactory(config.image_size).train_transform_display() # images augmentation
     resize_only = TransformFactory(config.image_size).raw_transform()  # for the "original" column
 
     samples = get_sample_paths(data_module, args.num_images)
@@ -83,14 +83,15 @@ def main():
         print("No training images found — check config.data_root.")
         return
 
+    # creating the figure
     n_rows = len(samples)
     n_cols = 1 + args.versions_per_image  # 1 original + N augmented versions
 
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(3 * n_cols, 3.2 * n_rows))
     if n_rows == 1:
         axes = axes.reshape(1, -1)
-
-    for row, (path, class_name) in enumerate(samples):
+    
+    for row, (path, class_name) in enumerate(samples): # open each original image
         img = Image.open(path).convert("RGB")
 
         # column 0: original (resized only, no augmentation)

@@ -76,3 +76,29 @@ class CNNClassifier(nn.Module):
     # Which part of the image made the CNN make its prediction?
     def gradcam_target_layer(self):
         return BackboneFactory.gradcam_target_layer(self.backbone_name, self.backbone)
+
+        # ------------------------------------------------------------
+    def summary(self, image_size: int = 224, batch_size: int = 1, depth: int = 3) -> str:
+        """
+        Prints (and returns as a string) a Keras-style layer-by-layer
+        summary: layer name, output shape, param count per layer, and
+        which layers are currently trainable vs frozen — this last part
+        is exactly what the assignment asks you to show under "Training
+        method: which layers are frozen/unfrozen."
+
+        Call this any time after building a CNNClassifier — works
+        identically regardless of which backbone_name was used, so it's
+        the natural thing to call once per architecture when comparing
+        backbones (see repeated_runs.py, which does exactly this).
+        """
+        from torchinfo import summary as torchinfo_summary
+
+        result = torchinfo_summary(
+            self,
+            input_size=(batch_size, 3, image_size, image_size),
+            col_names=("output_size", "num_params", "trainable"),
+            depth=depth,
+            verbose=0,  # we print the returned string ourselves, see below
+        )
+        print(result)
+        return str(result)
