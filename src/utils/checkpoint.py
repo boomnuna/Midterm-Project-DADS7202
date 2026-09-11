@@ -62,6 +62,10 @@ class CheckpointManager:
     def has_checkpoint(self) -> bool:
         return self.latest_path.exists()
 
+    # check best checkpoinht exist 
+    def has_best_checkpoint(self) -> bool:
+        return self.best_path.exists()
+
     # load lastest checkpoint 
     def load_latest(self, map_location="cpu") -> dict:
         return torch.load(self.latest_path, map_location=map_location, weights_only=False)
