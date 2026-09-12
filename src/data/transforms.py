@@ -43,6 +43,7 @@ class TransformFactory:
             transforms.RandomRotation(degrees=10), # do everytime but with differnt magnitude 
             transforms.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.1), # do everytime but with differnt magnitude
             transforms.RandomResizedCrop(self.image_size, scale=(0.8, 1.0)), # do everytime but with differnt magnitude
+            transforms.RandomPerspective(distortion_scale=0.15, p=0.3),
             transforms.ToTensor(),
             transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
         ])
@@ -62,6 +63,7 @@ class TransformFactory:
             transforms.RandomRotation(degrees=10),
             transforms.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.1),
             transforms.RandomResizedCrop(self.image_size, scale=(0.8, 1.0)),
+            transforms.RandomPerspective(distortion_scale=0.15, p=0.3),
         ])
 
     def eval_transform(self) -> transforms.Compose:
