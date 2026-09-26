@@ -76,9 +76,10 @@ class ExperimentLogger:
 
     # ---- structured helpers used by Trainer/ExperimentRunner ----
     def log_epoch(self, epoch: int, train_loss: float, train_acc: float,
-                  val_loss: float, val_acc: float):
+                  val_loss: float, val_acc: float, epoch_time: float = None):
+        time_str = f" | time={epoch_time:.1f}s" if epoch_time is not None else ""
         self.info(f"epoch {epoch:3d} | train_loss={train_loss:.4f} train_acc={train_acc:.4f} "
-                  f"| val_loss={val_loss:.4f} val_acc={val_acc:.4f}")
+                  f"| val_loss={val_loss:.4f} val_acc={val_acc:.4f}{time_str}")
 
     def log_run_summary(self, record: dict):
         """
@@ -106,24 +107,3 @@ class ExperimentLogger:
         with open(path, "w") as f:
             json.dump(data, f, indent=2, default=str)
         self.info(f"Saved {path}")
-
-
-
-"""
-  ExperimentRunner
-                          │
-                          ↓
-                       Trainer
-                          │
-                ┌─────────┴─────────┐
-                ↓                   ↓
-           Train model         Evaluate model
-                │                   │
-                └─────────┬─────────┘
-                          ↓
-                   ExperimentLogger
-                          │
-             ┌────────────┼────────────┐
-             ↓            ↓            ↓
-          .log file   CSV summary    JSON
-"""

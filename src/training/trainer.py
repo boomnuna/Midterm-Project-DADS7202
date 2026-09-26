@@ -11,9 +11,16 @@ passed in, fit() saves full training state EVERY epoch and will resume
 from the last saved epoch automatically if one already exists — so a
 Colab disconnect mid-training loses at most 1 epoch of progress, not the
 whole run. See src/utils/checkpoint.py and src/utils/colab_utils.py.
+
+TIMING: every epoch's wall-clock duration is measured and stored in
+history["epoch_time"] (seconds). Cumulative elapsed time survives a
+resume too (carried through the checkpoint) — so "how long did this run
+actually take" stays accurate even if it happened across 3 separate
+Colab sessions.
 """
 
 import copy
+import time
 import torch
 import torch.nn as nn
 from torch.optim import AdamW, SGD
@@ -38,7 +45,8 @@ class Trainer:
         self.optimizer = self._build_optimizer()
         self.scheduler = self._build_scheduler()
 
-        self.history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
+        self.history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": [], "epoch_time": []}
+        self.elapsed_seconds = 0.0  # cumulative wall-clock training time, survives resume
 
     # show log message 
     def _log(self, msg: str):
@@ -69,7 +77,7 @@ class Trainer:
                        momentum=0.9, weight_decay=self.config.weight_decay)
         raise ValueError(f"Unknown optimizer_name: {self.config.optimizer_name}")
 
-    # choose learning rate schedule 
+    # choose learning rate schedule
     def _build_scheduler(self):
         if self.config.lr_scheduler == "cosine":
             return CosineAnnealingLR(self.optimizer, T_max=self.config.num_epochs)
@@ -99,7 +107,7 @@ class Trainer:
                     loss.backward() # get gradient 
                     self.optimizer.step() # update weight 
 
-                total_loss += loss.item() * images.size(0) 
+                total_loss += loss.item() * images.size(0)
                 correct += (outputs.argmax(dim=1) == labels).sum().item()
                 total += images.size(0)
 
@@ -112,22 +120,25 @@ class Trainer:
         Returns (start_epoch, best_val_loss, epochs_without_improvement).
         If no checkpoint exists (or none was configured), returns the
         fresh-start defaults — this makes fit() work identically whether
-        or not checkpointing is enabled.
+        or not checkpointing is enabled. Also restores self.elapsed_seconds
+        so total training time stays accurate across a resume.
         """
         # check if a checkpoint exists
         if self.checkpoint_manager is None or not self.checkpoint_manager.has_checkpoint():
             return 0, float("inf"), 0
-        
+
         # load the latest checkpoint
         ckpt = self.checkpoint_manager.load_latest(map_location=self.device)
         self.model.load_state_dict(ckpt["model_state"]) # restore the model
-        self.optimizer.load_state_dict(ckpt["optimizer_state"]) # restore the optimizer 
+        self.optimizer.load_state_dict(ckpt["optimizer_state"]) # restore the optimizer
         if self.scheduler is not None and ckpt["scheduler_state"] is not None: # restore the scheduler
             self.scheduler.load_state_dict(ckpt["scheduler_state"])
         self.history = ckpt["history"]
+        self.elapsed_seconds = ckpt.get("elapsed_seconds", 0.0)  # .get() for checkpoints saved before this field existed
 
         start_epoch = ckpt["epoch"] + 1 # set the next epoch
         self._log(f"RESUMED from checkpoint at epoch {ckpt['epoch']} "
+                  f"(already trained {self.elapsed_seconds / 60:.1f} min so far) "
                   f"-> continuing from epoch {start_epoch + 1}")
         return start_epoch, ckpt["best_val_loss"], ckpt["epochs_without_improvement"]
 
@@ -145,31 +156,40 @@ class Trainer:
         best_state = None
 
         for epoch in range(start_epoch, self.config.num_epochs):
+            epoch_start_time = time.perf_counter()
+
             train_loss, train_acc = self._run_epoch(train_loader, train=True)
             val_loss, val_acc = self._run_epoch(val_loader, train=False)
 
             if self.scheduler is not None:
                 self.scheduler.step()
 
+            epoch_duration = time.perf_counter() - epoch_start_time
+            self.elapsed_seconds += epoch_duration
+
             self.history["train_loss"].append(train_loss)
             self.history["train_acc"].append(train_acc)
             self.history["val_loss"].append(val_loss)
             self.history["val_acc"].append(val_acc)
+            self.history["epoch_time"].append(epoch_duration)
 
             # print result or not
             if verbose:
                 if self.logger is not None:
-                    self.logger.log_epoch(epoch + 1, train_loss, train_acc, val_loss, val_acc)
+                    self.logger.log_epoch(epoch + 1, train_loss, train_acc, val_loss, val_acc,
+                                          epoch_time=epoch_duration)
                 else:
                     print(f"  epoch {epoch + 1:2d}/{self.config.num_epochs} "
                           f"train_loss={train_loss:.4f} train_acc={train_acc:.4f} "
-                          f"val_loss={val_loss:.4f} val_acc={val_acc:.4f}")
+                          f"val_loss={val_loss:.4f} val_acc={val_acc:.4f} "
+                          f"time={epoch_duration:.1f}s")
 
             if self.wandb_run is not None:
                 self.wandb_run.log({
                     "epoch": epoch + 1,
                     "train_loss": train_loss, "train_acc": train_acc,
                     "val_loss": val_loss, "val_acc": val_acc,
+                    "epoch_time_sec": epoch_duration,
                 })
 
             # for early stopping record 
@@ -187,11 +207,13 @@ class Trainer:
                 self.checkpoint_manager.save_latest(
                     epoch, self.model, self.optimizer, self.scheduler,
                     self.history, best_val_loss, epochs_without_improvement,
+                    elapsed_seconds=self.elapsed_seconds,
                 )
                 if improved:
                     self.checkpoint_manager.save_best(
                         epoch, self.model, self.optimizer, self.scheduler,
                         self.history, best_val_loss, epochs_without_improvement,
+                        elapsed_seconds=self.elapsed_seconds,
                     )
 
             if epochs_without_improvement >= self.config.early_stopping_patience:
@@ -202,5 +224,11 @@ class Trainer:
 
         if best_state is not None:
             self.model.load_state_dict(best_state)
+
+        if verbose:
+            avg_epoch_time = sum(self.history["epoch_time"]) / len(self.history["epoch_time"])
+            self._log(f"Training done. Total time: {self.elapsed_seconds / 60:.1f} min "
+                      f"({self.elapsed_seconds:.1f}s) over {len(self.history['epoch_time'])} epochs "
+                      f"this session, avg {avg_epoch_time:.1f}s/epoch.")
 
         return self.history

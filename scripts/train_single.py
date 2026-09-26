@@ -75,13 +75,22 @@ def main():
     )
     print(f"Trainable parameters: {model.trainable_parameter_count():,}")
 
+    print("-" * 70)
+    print(f"Model summary ({args.backbone}):")
+    summary_text = model.summary(image_size=config.image_size)
+    logger.save_json({"model_summary": summary_text}, filename=f"{run_id}_model_summary.json")
+
     # create Trainer 
     trainer = Trainer(model, config, class_weights=class_weights, logger=logger,
                        checkpoint_manager=checkpoint_manager)
     # fit model
+    print("-" * 70)
+    print("Starting model training...")
     history = trainer.fit(data_module.train_loader(), data_module.val_loader())
 
     # evaluation 
+    print("-" * 70)
+    print("Starting model evaluation...")
     evaluator = Evaluator(data_module.class_names)
     # evaluation in test dataset 
     test_metrics = evaluator.evaluate(model, data_module.test_loader(), trainer.device)
@@ -92,6 +101,7 @@ def main():
     evaluator.print_classification_report(model, data_module.test_loader(), trainer.device)
 
     # plot training resuult 
+    print("-" * 70)
     out_dir = config.output_root / args.backbone
     out_dir.mkdir(parents=True, exist_ok=True)
     evaluator.plot_training_curves(history, title=args.backbone, save_path=out_dir / "training_curves.png")
