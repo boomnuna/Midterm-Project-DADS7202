@@ -4,6 +4,7 @@ __pycache__/
 *.pth
 .DS_Store
 .ipynb_checkpoints/
+dads7202_env/
 
 # folder
 /data/
