@@ -46,7 +46,7 @@ class Config:
         "resnet50",
         "vgg16",
         "efficientnet_b0",
-        "mobilenet_v3_large",
+        "mobilenet_v3_small",
     ])
 
     # ---- training method ----

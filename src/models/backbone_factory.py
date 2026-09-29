@@ -44,9 +44,9 @@ def _build_efficientnet_b0(pretrained: bool = True):
     return net, feature_dim, list(net.features)  # list of stages for block-wise unfreeze
 
 # MobileNet
-def _build_mobilenet_v3_large(pretrained: bool = True):
-    weights = models.MobileNet_V3_Large_Weights.IMAGENET1K_V2 if pretrained else None
-    net = models.mobilenet_v3_large(weights=weights)
+def _build_mobilenet_v3_small(pretrained: bool = True):
+    weights = models.MobileNet_V3_Small_Weights.IMAGENET1K_V2 if pretrained else None
+    net = models.mobilenet_v3_small(weights=weights)
     feature_dim = net.classifier[0].in_features
     net.classifier = nn.Identity()
     return net, feature_dim, list(net.features)
@@ -56,7 +56,7 @@ _BUILDERS = {
     "resnet50": _build_resnet50,
     "vgg16": _build_vgg16,
     "efficientnet_b0": _build_efficientnet_b0,
-    "mobilenet_v3_large": _build_mobilenet_v3_large,
+    "mobilenet_v3_large": _build_mobilenet_v3_small,
 }
 
 
@@ -96,7 +96,7 @@ class BackboneFactory:
             return backbone_module.features[-1]
         if name == "efficientnet_b0":
             return backbone_module.features[-1]
-        if name == "mobilenet_v3_large":
+        if name == "mobilenet_v3_small":
             return backbone_module.features[-1]
         raise ValueError(f"No GradCAM target layer defined for '{name}'")
     
