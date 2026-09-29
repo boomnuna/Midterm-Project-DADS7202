@@ -40,8 +40,8 @@ class TransformFactory:
             # right matters; color jitter kept mild here since color is
             # a key discriminative cue for some classes — see README) ---
             transforms.RandomHorizontalFlip(p=0.5), # random do with chance 50%
-            transforms.RandomRotation(degrees=10), # do everytime but with differnt magnitude 
-            transforms.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.1), # do everytime but with differnt magnitude
+            transforms.RandomRotation(degrees=15), # do everytime but with differnt magnitude 
+            transforms.ColorJitter(brightness=0.20, contrast=0.15, saturation=0.1), # do everytime but with differnt magnitude
             transforms.RandomResizedCrop(self.image_size, scale=(0.8, 1.0)), # do everytime but with differnt magnitude
             transforms.RandomPerspective(distortion_scale=0.15, p=0.3),
             transforms.ToTensor(),
@@ -59,10 +59,10 @@ class TransformFactory:
         """
         return transforms.Compose([
             transforms.Resize((self.image_size, self.image_size)),
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomRotation(degrees=10),
-            transforms.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.1),
-            transforms.RandomResizedCrop(self.image_size, scale=(0.8, 1.0)),
+             transforms.RandomHorizontalFlip(p=0.5), 
+            transforms.RandomRotation(degrees=15),
+            transforms.ColorJitter(brightness=0.20, contrast=0.15, saturation=0.1), 
+            transforms.RandomResizedCrop(self.image_size, scale=(0.8, 1.0)), 
             transforms.RandomPerspective(distortion_scale=0.15, p=0.3),
         ])
 
