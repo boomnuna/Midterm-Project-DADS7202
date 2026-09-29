@@ -47,4 +47,27 @@ After a disconnect: reconnect the runtime, re-run CELL 1 (Drive
 remounts, doesn't re-download anything), then re-run CELL 2 with the
 SAME --backbones argument — completed runs are skipped automatically,
 the in-progress run resumes from its last checkpointed epoch.
+
+=====================================================================
+ADD THIS BEFORE RUN IN GOOGLE COLLAB 
+=====================================================================
+%cd /content
+!rm -rf Midterm-Project-DADS7202   # ลบของเก่าที่ซ้อนออกก่อน
+!git clone -b dev_test_code https://github.com/boomnuna/Midterm-Project-DADS7202
+%cd Midterm-Project-DADS7202
+
+---------------------------------------------------------------------
+import sys
+sys.path.append('.')
+from src.utils.colab_utils import mount_drive, colab_output_root
+mount_drive()
+
+---------------------------------------------------------------------
+# Change data_root
+!sed -i 's|data_root: Path = Path("data")|data_root: Path = Path("/content/drive/MyDrive/DADS7202/Midterm_Project/dataset")|' config.py
+# Change output_root
+!sed -i 's|output_root: Path = Path("outputs")|output_root: Path = Path("/content/drive/MyDrive/DADS7202/Midterm_Project/Output")|' config.py
+
+# เช็คว่าแก้ถูกจุด
+!grep "data_root\|output_root" config.py
 """
