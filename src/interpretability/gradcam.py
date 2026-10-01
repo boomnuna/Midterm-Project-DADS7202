@@ -58,7 +58,7 @@ class GradCAM:
         """
         self.model.eval() 
 
-        input_tensor = input_tensor.to(self.device)
+        input_tensor = input_tensor.to(self.device).requires_grad_(True)
         output = self.model(input_tensor)
 
         if target_class is None:

@@ -17,6 +17,22 @@ history["epoch_time"] (seconds). Cumulative elapsed time survives a
 resume too (carried through the checkpoint) — so "how long did this run
 actually take" stays accurate even if it happened across 3 separate
 Colab sessions.
+
+OPTUNA PRUNING SUPPORT (NEW): fit() accepts an optional `trial` argument
+(an optuna.Trial). When provided, EVERY epoch's val_acc is reported to
+that trial right after it's computed, and if the trial is flagged for
+pruning (underperforming vs other trials at the same epoch), an
+optuna.TrialPruned exception is raised immediately — stopping this run
+right there instead of wasting time training a clearly-bad hyperparameter
+combination to completion. Pass trial=None (the default) for a normal
+run — this is what scripts/train_single.py and repeated_runs.py do, so
+nothing about them needs to change.
+
+Note: the pruning signal is val_acc (tracked every epoch already), even
+though hyperparameter_tuning.py's final objective is val f1_macro —
+that's fine, Optuna's intermediate pruning values don't have to match
+the final objective metric. val_acc is just a fast per-epoch proxy for
+"is this trial clearly falling behind the others."
 """
 
 import copy
@@ -38,7 +54,7 @@ class Trainer:
         self.wandb_run = wandb_run                     # active wandb run, or None
         self.checkpoint_manager = checkpoint_manager   # CheckpointManager, or None -> no resume support
 
-        self._apply_training_mode() # freeze bbackbone or not 
+        self._apply_training_mode() # freeze bbackbone or not
 
         weight_tensor = class_weights.to(self.device) if class_weights is not None else None
         self.criterion = nn.CrossEntropyLoss(weight=weight_tensor)
@@ -48,7 +64,7 @@ class Trainer:
         self.history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": [], "epoch_time": []}
         self.elapsed_seconds = 0.0  # cumulative wall-clock training time, survives resume
 
-    # show log message 
+    # show log message
     def _log(self, msg: str):
         if self.logger is not None:
             self.logger.info(msg)
@@ -56,13 +72,13 @@ class Trainer:
             print(msg)
 
     # ------------------------------------------------------------
-    # freeze backbone or not 
+    # freeze backbone or not
     def _apply_training_mode(self):
         if self.config.training_mode == "feature_extract":
             self.model.freeze_backbone(fully=True)
         elif self.config.training_mode == "finetune":
-            self.model.freeze_backbone(fully=True) # reset everything back to freeze 
-            self.model.unfreeze_last_n_blocks(self.config.finetune_unfreeze_last_n_blocks) # then unfreeze later 
+            self.model.freeze_backbone(fully=True) # reset everything back to freeze
+            self.model.unfreeze_last_n_blocks(self.config.finetune_unfreeze_last_n_blocks) # then unfreeze later
         else:
             raise ValueError(f"Unknown training_mode: {self.config.training_mode}")
 
@@ -86,26 +102,26 @@ class Trainer:
         return None
 
     # ------------------------------------------------------------
-    # run epoch for train and test 
+    # run epoch for train and test
     def _run_epoch(self, loader, train: bool):
-        # set model to train or validation mode 
+        # set model to train or validation mode
         self.model.train() if train else self.model.eval()
         # init metrics
         total_loss, correct, total = 0.0, 0, 0
 
 
         with torch.set_grad_enabled(train): # enable/disable gradient calculation
-            for images, labels in loader: # loader = num batch size 
+            for images, labels in loader: # loader = num batch size
                 images, labels = images.to(self.device), labels.to(self.device) # move data to GPU/CPU
 
                 if train:
                     self.optimizer.zero_grad() # clear old gradients
-                outputs = self.model(images) # forward pass 
-                loss = self.criterion(outputs, labels) # calculate loss 
+                outputs = self.model(images) # forward pass
+                loss = self.criterion(outputs, labels) # calculate loss
 
                 if train:
-                    loss.backward() # get gradient 
-                    self.optimizer.step() # update weight 
+                    loss.backward() # get gradient
+                    self.optimizer.step() # update weight
 
                 total_loss += loss.item() * images.size(0)
                 correct += (outputs.argmax(dim=1) == labels).sum().item()
@@ -142,12 +158,40 @@ class Trainer:
                   f"-> continuing from epoch {start_epoch + 1}")
         return start_epoch, ckpt["best_val_loss"], ckpt["epochs_without_improvement"]
 
-    # model fitting 
-    def fit(self, train_loader, val_loader, verbose: bool = True):
-        # try to resume 
+    # ------------------------------------------------------------
+    # NEW: report this epoch's val_acc to an Optuna trial (if one was
+    # passed to fit()) and raise optuna.TrialPruned() if Optuna decides
+    # this trial is underperforming and should be cut short.
+    #
+    # Defensive by design: a trial is ONLY ever passed in by
+    # OptunaTuner._objective(), which already has optuna installed (it's
+    # what's calling us), so the ImportError branch below should never
+    # actually trigger in practice. It exists anyway so that IF someone
+    # ever calls fit(trial=something) from a context where optuna isn't
+    # importable, training degrades gracefully (a warning, no pruning)
+    # instead of crashing a run that was otherwise working fine.
+    def _report_to_trial_and_maybe_prune(self, trial, val_acc: float, epoch: int):
+        try:
+            import optuna
+        except ImportError as e:
+            self._log(f"  WARNING: fit() was given a trial but 'optuna' isn't "
+                      f"importable ({e}) — skipping pruning check for epoch "
+                      f"{epoch + 1}. (This shouldn't normally happen — optuna "
+                      f"must already be installed for a trial object to exist.)")
+            return
+
+        trial.report(val_acc, epoch)
+        if trial.should_prune():
+            self._log(f"  pruned at epoch {epoch + 1} (val_acc={val_acc:.4f} "
+                      f"underperforming vs other trials at this step)")
+            raise optuna.TrialPruned()
+
+    # model fitting
+    def fit(self, train_loader, val_loader, verbose: bool = True, trial=None):
+        # try to resume
         start_epoch, best_val_loss, epochs_without_improvement = self._try_resume()
 
-        # epoch reached 
+        # epoch reached
         if start_epoch >= self.config.num_epochs:
             self._log(f"Checkpoint already reached target num_epochs="
                       f"{self.config.num_epochs} — nothing to train, returning existing history.")
@@ -192,7 +236,15 @@ class Trainer:
                     "epoch_time_sec": epoch_duration,
                 })
 
-            # for early stopping record 
+            # ---- NEW: Optuna pruning check — happens every epoch, right
+            # after this epoch's val_acc is known. Raises TrialPruned and
+            # exits fit() immediately if this trial should be cut short.
+            # No-op (does nothing) when trial is None, i.e. every normal
+            # (non-Optuna) training run. ----
+            if trial is not None:
+                self._report_to_trial_and_maybe_prune(trial, val_acc, epoch)
+
+            # for early stopping record
             improved = val_loss < best_val_loss
             if improved:
                 best_val_loss = val_loss

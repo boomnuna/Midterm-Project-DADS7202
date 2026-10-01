@@ -56,7 +56,7 @@ _BUILDERS = {
     "resnet50": _build_resnet50,
     "vgg16": _build_vgg16,
     "efficientnet_b0": _build_efficientnet_b0,
-    "mobilenet_v3_large": _build_mobilenet_v3_small,
+    "mobilenet_v3_small": _build_mobilenet_v3_small,
 }
 
 
