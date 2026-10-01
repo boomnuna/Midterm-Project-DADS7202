@@ -26,13 +26,15 @@ class Config:
     data_root: Path = Path("data")
     output_root: Path = Path("outputs")
 
+    #TODO: Dataset
     # ---- image / dataloader ----
     image_size: int = 224 # standard input size for most torchvision backbones
     batch_size: int = 64
-    num_workers: int = 2
+    num_workers: int = 8
 
     # ---- train/val/test split (used only if your data_root has no
     # pre-made train/val/test subfolders yet — see data/dataset.py) ----
+    #TODO: Splitting Ratio
     val_fraction: float = 0.15
     test_fraction: float = 0.15
     split_seed: int = 42           # fixed so the split itself is reproducible
@@ -42,6 +44,7 @@ class Config:
     # Must be "significantly different architectures" per the assignment
     # (e.g. don't count VGG16+VGG19 as 2 architectures). Names must match
     # keys registered in models/backbone_factory.py.
+    #TODO: Model Architecture
     backbone_names: list = field(default_factory=lambda: [
         "resnet50",
         "vgg16",
@@ -54,29 +57,31 @@ class Config:
     #                      (matches assignment's "transfer learning" option)
     # "finetune"        = unfreeze last N backbone blocks too
     #                      (matches assignment's "finetuning" option)
+    #TODO: Training Method 
     training_mode: str = "finetune"
     finetune_unfreeze_last_n_blocks: int = 2
+    # ---- repeated runs (for mean±SD reporting, assignment section 6) ----
+    num_repeats: int = 5           # assignment asks for 3-10 repeats per architecture
+    base_seed: int = 100           # repeat i uses seed = base_seed + i
 
+    #TODO: Hyperparameter
     # ---- optimizer / schedule ----
     optimizer_name: str = "adamw"
     learning_rate: float = 1e-4
     weight_decay: float = 1e-4
     lr_scheduler: str = "cosine"   # "cosine" | "step" | "none"
     num_epochs: int = 20
-    early_stopping_patience: int = 5
-
+    early_stopping_patience: int = 10
     # ---- classifier head added on top of the backbone ----
     head_hidden_dim: int = 256
     head_dropout: float = 0.3
 
-    # ---- repeated runs (for mean±SD reporting, assignment section 6) ----
-    num_repeats: int = 5           # assignment asks for 3-10 repeats per architecture
-    base_seed: int = 100           # repeat i uses seed = base_seed + i
-
+    #TODO: Class Imbalance Method 
     # ---- class imbalance handling ----
     # "none" | "class_weights" | "oversample"
     imbalance_strategy: str = "class_weights"
 
+     #TODO: Weight & Bias
     # ---- logging ----
     # Local file logging always happens regardless of the flags below —
     # see src/utils/logger.py. These two are OPTIONAL cloud/tracking add-ons.
@@ -84,6 +89,7 @@ class Config:
     wandb_project: str = "Midterm-Project-DADS7202" 
     wandb_entity: str = None   # your W&B team/org name, if using one
 
+    #TODO: Optuna
     use_optuna: bool = False
     optuna_n_trials: int = 20
     optuna_quick_epochs: int = 8   # shorter than num_epochs, just for the search phase
