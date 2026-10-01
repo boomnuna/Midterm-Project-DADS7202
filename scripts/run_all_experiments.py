@@ -7,7 +7,16 @@ produces:
   - mean±SD table (assignment section 6)
   - pairwise statistical significance (assignment section 6)
   - training curves + confusion matrix per architecture (section 6)
-  - GradCAM examples using the best run of each architecture (section 7)
+  - GradCAM examples using the BEST run of each architecture (section 7)
+
+PRIMARY METRIC: f1_macro, not accuracy — the dataset is imbalanced across
+the 4 classes, so macro-F1 (unweighted average of each class's F1) is a
+fairer "which architecture actually wins" signal than raw accuracy, which
+can look good just by nailing the majority class(es). Every selection
+below (best run per backbone, best architecture overall, pairwise
+significance) is keyed on f1_macro for this reason. accuracy is still
+reported in the mean±SD table for completeness, just not used to pick
+winners anymore.
 
 RUNNING THIS ACROSS MULTIPLE COLAB SESSIONS:
 Use --backbones to run just ONE (or a few) architecture(s) per session —
@@ -35,15 +44,22 @@ import argparse
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
+import torch
 import numpy as np
 
 from config import Config
 from src.data.dataset import DataModule
+from src.data.transforms import TransformFactory
+from src.models.classifier import CNNClassifier
 from src.training.repeated_runs import ExperimentRunner
 from src.evaluation.metrics import Evaluator
 from src.evaluation.statistics import StatisticalComparator
 from src.interpretability.gradcam import GradCAM
-from src.data.transforms import TransformFactory
+from src.utils.checkpoint import CheckpointManager
+
+# the metric used to pick "best run" / "best architecture" everywhere in
+# this script — see module docstring for why f1_macro, not accuracy.
+PRIMARY_METRIC = "f1_macro"
 
 
 def main():
@@ -61,6 +77,7 @@ def main():
     print(f"Classes: {data_module.class_names}")
     print(f"Architectures to compare THIS RUN: {config.backbone_names}")
     print(f"Repeats per architecture: {config.num_repeats}")
+    print(f"Primary metric for best-run/best-architecture selection: {PRIMARY_METRIC}")
     print(f"Output root: {config.output_root}  "
           f"({'Google Drive path — good, survives disconnects' if 'drive' in str(config.output_root).lower() else 'LOCAL PATH — will be LOST on Colab disconnect unless this is a mounted Drive path!'})\n")
 
@@ -77,33 +94,46 @@ def main():
 
     # ---- mean±SD + significance (assignment section 6) ----
     comparator = StatisticalComparator(results)
-    comparator.print_mean_std_table()
+    comparator.print_mean_std_table()  # prints accuracy/precision/recall/f1_macro all at once, for the report
     print()
-    comparator.print_pairwise_significance(metric_name="accuracy")
+    comparator.print_pairwise_significance(metric_name=PRIMARY_METRIC)
 
-    best_name = comparator.best_architecture(metric_name="accuracy")
-    print(f"\nBest architecture by mean accuracy: {best_name}")
+    best_name = comparator.best_architecture(metric_name=PRIMARY_METRIC)
+    print(f"\nBest architecture by mean {PRIMARY_METRIC}: {best_name}")
 
-    # ---- plots for the best run of each architecture ----
+    # ---- plots + best-run bookkeeping for each architecture ----
+    # best_run_ids[backbone_name] = (seed, run_id) of the run with the
+    # highest f1_macro for that backbone — reused below for GradCAM so
+    # GradCAM reflects the SAME "best" run as everything else in the
+    # report, not whichever seed happened to finish training last.
     evaluator = Evaluator(data_module.class_names)
+    best_run_ids = {}
     for backbone_name, runs in results.items():
-        best_run = max(runs, key=lambda r: r["accuracy"])
+        best_run = max(runs, key=lambda r: r[PRIMARY_METRIC])
+        best_run_ids[backbone_name] = (best_run["seed"], f"{backbone_name}_seed{best_run['seed']}")
+
         out_dir = config.output_root / backbone_name
         out_dir.mkdir(parents=True, exist_ok=True)
 
         evaluator.plot_training_curves(
-            best_run["history"], title=f"{backbone_name} (best run)",
+            best_run["history"], title=f"{backbone_name} (best run, {PRIMARY_METRIC}={best_run[PRIMARY_METRIC]:.4f})",
             save_path=out_dir / "training_curves_best_run.png",
         )
         evaluator.plot_confusion_matrix(
-            best_run["confusion_matrix"], title=f"{backbone_name} (best run)",
+            best_run["confusion_matrix"], title=f"{backbone_name} (best run, {PRIMARY_METRIC}={best_run[PRIMARY_METRIC]:.4f})",
             save_path=out_dir / "confusion_matrix_best_run.png",
         )
 
-    # ---- GradCAM on a few test images, using each architecture's last-trained model ----
-    print("\nGenerating GradCAM examples...")
+    # ---- GradCAM on a few test images, using each architecture's BEST
+    # run (by f1_macro) — reloaded from its saved checkpoint rather than
+    # from runner.last_models, which only ever holds the LAST-trained
+    # seed (not necessarily the best one). This keeps GradCAM consistent
+    # with which run every other plot/table in this script treats as
+    # "the" result for that architecture. ----
+    print(f"\nGenerating GradCAM examples (using each architecture's best run by {PRIMARY_METRIC})...")
     raw_transform = TransformFactory(config.image_size).raw_transform()
     eval_transform = TransformFactory(config.image_size).eval_transform()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # grab a small fixed sample of test images to keep GradCAM comparable across architectures
     sample_paths = []
@@ -113,7 +143,43 @@ def main():
         idx = test_dataset.indices[i] if hasattr(test_dataset, "indices") else i
         sample_paths.append(underlying.samples[idx][0])
 
-    for backbone_name, model in runner.last_models.items():
+    for backbone_name, (best_seed, best_run_id) in best_run_ids.items():
+        checkpoint_manager = CheckpointManager(config.output_root / "checkpoints", best_run_id)
+
+        # ---- error handling: best run's checkpoint should always exist
+        # right after run_all() finishes, but be defensive anyway (e.g.
+        # someone re-runs just this GradCAM section later after manually
+        # clearing outputs/checkpoints/ but keeping experiment_log.csv) ----
+        if not checkpoint_manager.has_checkpoint():
+            print(f"  WARNING: no checkpoint found for {backbone_name}'s best run "
+                  f"(run_id='{best_run_id}') under {config.output_root / 'checkpoints'} — "
+                  f"skipping GradCAM for {backbone_name}.")
+            continue
+
+        model = CNNClassifier(
+            backbone_name=backbone_name,
+            num_classes=data_module.num_classes,
+            head_hidden_dim=config.head_hidden_dim,
+            head_dropout=config.head_dropout,
+            pretrained=False,  # weights get overwritten by the checkpoint right below
+        )
+
+        try:
+            if checkpoint_manager.has_best_checkpoint():
+                ckpt = checkpoint_manager.load_best(map_location="cpu")
+            else:
+                print(f"  WARNING: run_id='{best_run_id}' has no best.pt (only latest.pt) — "
+                      f"using the latest checkpoint instead for GradCAM.")
+                ckpt = checkpoint_manager.load_latest(map_location="cpu")
+            model.load_state_dict(ckpt["model_state"])
+        except (RuntimeError, KeyError, OSError) as e:
+            print(f"  WARNING: failed to load checkpoint for {backbone_name}'s best run "
+                  f"(run_id='{best_run_id}'): {e} — skipping GradCAM for {backbone_name}.")
+            continue
+
+        model.to(device)
+        model.eval()
+
         gradcam = GradCAM(model)
         out_dir = config.output_root / backbone_name / "gradcam"
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -129,6 +195,10 @@ def main():
                 input_tensor, raw_np, data_module.class_names,
                 save_path=out_dir / f"gradcam_{fname}.png",
             )
+
+        best_run_metrics = next(r for r in results[backbone_name] if r["seed"] == best_seed)
+        print(f"  GradCAM done for {backbone_name} using best run "
+              f"(run_id='{best_run_id}', {PRIMARY_METRIC}={best_run_metrics[PRIMARY_METRIC]:.4f})")
 
     print(f"\nAll outputs saved under {config.output_root}/")
 

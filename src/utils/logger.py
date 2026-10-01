@@ -15,6 +15,20 @@ yet, or the wifi in the room dies during a live demo):
      you actually open in Excel/pandas to compare all your experiments
      at a glance — e.g. `pd.read_csv("outputs/experiment_log.csv")` and
      sort by accuracy — without re-running or re-parsing anything.
+
+SCHEMA STABILITY (NEW): log_run_summary() used to build a fresh CSV
+header from whatever keys happened to be in each record, every single
+call. If two runs ever logged records with different sets of fields
+(e.g. a hyperparameter like finetune_unfreeze_last_n_blocks got added
+to summary_row after some runs were already logged, or train_single.py
+logs a differently-shaped record into the same shared CSV), later rows
+would silently land under the WRONG column headers — csv.DictWriter
+doesn't check that a row's keys still match the header the file was
+first created with. Now log_run_summary() reads the file's ACTUAL
+existing header first and always writes against THAT (extra fields in
+a record are dropped, missing ones written blank), with a warning
+either way — so the CSV can never get silently misaligned again, even
+if it's a little lossy for the odd mismatched run in the meantime.
 """
 
 import csv
@@ -81,6 +95,47 @@ class ExperimentLogger:
         self.info(f"epoch {epoch:3d} | train_loss={train_loss:.4f} train_acc={train_acc:.4f} "
                   f"| val_loss={val_loss:.4f} val_acc={val_acc:.4f}{time_str}")
 
+    # ------------------------------------------------------------
+    # NEW: figure out what fieldnames to write THIS row with. If the CSV
+    # already exists, reads its real header off disk rather than trusting
+    # this call's own record.keys() — that's what keeps every row aligned
+    # to the SAME columns no matter how summary_row's shape has drifted
+    # over the life of the project.
+    def _resolve_fieldnames(self, record: dict) -> list:
+        if not self.summary_csv_path.exists():
+            return list(record.keys())
+
+        try:
+            with open(self.summary_csv_path, "r", newline="") as f:
+                existing_header = next(csv.reader(f), None)
+        except OSError as e:
+            self.warning(f"log_run_summary(): could not read existing header from "
+                         f"{self.summary_csv_path} ({e}) — falling back to this record's "
+                         f"own keys as the header. If the file already has a different "
+                         f"column order, this row may not line up with earlier ones.")
+            return list(record.keys())
+
+        if not existing_header:
+            # file exists but is empty (e.g. created then never written to) — safe to
+            # treat this record's keys as the header, same as a brand-new file.
+            return list(record.keys())
+
+        missing_from_record = [k for k in existing_header if k not in record]
+        extra_in_record = [k for k in record if k not in existing_header]
+        if extra_in_record:
+            self.warning(f"log_run_summary(): this run's record has field(s) not in "
+                         f"{self.summary_csv_path}'s existing header: {extra_in_record}. "
+                         f"These values will be DROPPED from this row so the CSV stays "
+                         f"column-aligned with earlier rows (e.g. a hyperparameter added "
+                         f"after earlier runs were already logged). If you want them kept, "
+                         f"back up/delete {self.summary_csv_path} to start a fresh file "
+                         f"with the new schema.")
+        if missing_from_record:
+            self.warning(f"log_run_summary(): this run's record is missing field(s) that "
+                         f"{self.summary_csv_path}'s existing header expects: "
+                         f"{missing_from_record}. They'll be written blank for this row.")
+        return existing_header
+
     def log_run_summary(self, record: dict):
         """
         Appends one row to the shared CSV. `record` should be a FLAT dict
@@ -91,9 +146,15 @@ class ExperimentLogger:
         """
         record = {"timestamp": datetime.now().isoformat(timespec="seconds"), **record}
         file_exists = self.summary_csv_path.exists()
+        fieldnames = self._resolve_fieldnames(record)
 
         with open(self.summary_csv_path, "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=list(record.keys()))
+            # extrasaction="ignore": drop any record key not in fieldnames
+            # (already warned about above) instead of raising ValueError.
+            # restval="": any fieldname missing from record (already
+            # warned about above) is written as a blank cell instead of
+            # raising KeyError.
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore", restval="")
             if not file_exists:
                 writer.writeheader()
             writer.writerow(record)

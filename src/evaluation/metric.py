@@ -22,12 +22,12 @@ class Evaluator:
     def __init__(self, class_names: list):
         self.class_names = class_names
 
-    # get prediction value 
+    # get prediction value
     @torch.no_grad() # tell to don't calculate gradients.
     def _collect_predictions(self, model, loader, device):
         model.eval()
         all_preds, all_labels = [], []
-        for images, labels in loader: # loop through dataset 
+        for images, labels in loader: # loop through dataset
             images = images.to(device)
             outputs = model(images) # model makes predictions
             preds = outputs.argmax(dim=1).cpu().numpy() # get predict class
@@ -35,20 +35,30 @@ class Evaluator:
             all_labels.extend(labels.numpy())
         return np.array(all_labels), np.array(all_preds)
 
-    # 
+    #
     def evaluate(self, model, loader, device) -> dict:
         y_true, y_pred = self._collect_predictions(model, loader, device) # prediction
+
+        # NEW: fixed label set (0..num_classes-1) instead of whatever
+        # labels() defaults to from y_true/y_pred's own unique values.
+        # Without this, if a class happens to have ZERO samples in both
+        # y_true and y_pred for some run (small test sets + 4 classes
+        # makes this unlikely but not impossible), confusion_matrix()
+        # would silently return a SMALLER matrix (e.g. 3x3 instead of
+        # 4x4), which would then be mismatched against the 4 class-name
+        # tick labels in plot_confusion_matrix() below.
+        label_ids = list(range(len(self.class_names)))
 
         accuracy = accuracy_score(y_true, y_pred)
         # show precision/recall/F1 score for all class(good for imbalance dataset).
         precision_macro, recall_macro, f1_macro, _ = precision_recall_fscore_support(
-            y_true, y_pred, average="macro", zero_division=0
+            y_true, y_pred, labels=label_ids, average="macro", zero_division=0
         )
         # show precision/recall/F1 score for each class.
         precision_per_class, recall_per_class, f1_per_class, support_per_class = (
-            precision_recall_fscore_support(y_true, y_pred, average=None, zero_division=0)
+            precision_recall_fscore_support(y_true, y_pred, labels=label_ids, average=None, zero_division=0)
         )
-        cm = confusion_matrix(y_true, y_pred)
+        cm = confusion_matrix(y_true, y_pred, labels=label_ids)
 
         return {
             "accuracy": accuracy,
@@ -61,13 +71,15 @@ class Evaluator:
             "support_per_class": dict(zip(self.class_names, support_per_class)),
             "confusion_matrix": cm,
         }
-    
+
     # basically a convenient way to print a standard classification report.
     def print_classification_report(self, model, loader, device):
         y_true, y_pred = self._collect_predictions(model, loader, device)
-        print(classification_report(y_true, y_pred, target_names=self.class_names, zero_division=0))
+        label_ids = list(range(len(self.class_names)))
+        print(classification_report(y_true, y_pred, labels=label_ids,
+                                     target_names=self.class_names, zero_division=0))
 
-    # show confusion matrix 
+    # show confusion matrix
     def plot_confusion_matrix(self, confusion_mat, title: str, save_path=None):
         fig, ax = plt.subplots(figsize=(6, 5))
         im = ax.imshow(confusion_mat, cmap="Blues")
