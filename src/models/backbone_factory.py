@@ -21,7 +21,7 @@ def _resnet_block_groups(net):
 
 # resnet50
 def _build_resnet50(pretrained: bool = True):
-    weights = models.ResNet50_Weights.IMAGENET1K_V2 if pretrained else None
+    weights = models.ResNet50_Weights.IMAGENET1K_V1 if pretrained else None
     net = models.resnet50(weights=weights)
     feature_dim = net.fc.in_features
     net.fc = nn.Identity()  # remove original 1000-class ImageNet head
@@ -45,7 +45,7 @@ def _build_efficientnet_b0(pretrained: bool = True):
 
 # MobileNet
 def _build_mobilenet_v3_small(pretrained: bool = True):
-    weights = models.MobileNet_V3_Small_Weights.IMAGENET1K_V2 if pretrained else None
+    weights = models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None
     net = models.mobilenet_v3_small(weights=weights)
     feature_dim = net.classifier[0].in_features
     net.classifier = nn.Identity()
