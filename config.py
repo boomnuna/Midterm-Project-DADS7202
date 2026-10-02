@@ -16,6 +16,7 @@ TO SWITCH TO YOUR REAL DATASET LATER:
 
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
+import os
 
 
 @dataclass
@@ -30,7 +31,7 @@ class Config:
     # ---- image / dataloader ----
     image_size: int = 224 # standard input size for most torchvision backbones
     batch_size: int = 64
-    num_workers: int = 8
+    num_workers: int = os.cpu_count()
 
     # ---- train/val/test split (used only if your data_root has no
     # pre-made train/val/test subfolders yet — see data/dataset.py) ----
