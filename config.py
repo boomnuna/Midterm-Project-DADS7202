@@ -92,7 +92,7 @@ class Config:
 
     #TODO: Optuna
     use_optuna: bool = False
-    optuna_n_trials: int = 20
+    optuna_n_trials: int = 25
     optuna_quick_epochs: int = 8   # shorter than num_epochs, just for the search phase
     optuna_storage: str = "sqlite:///outputs/optuna_study.db"
     # ^ file-based storage works for one person tuning locally. For a
