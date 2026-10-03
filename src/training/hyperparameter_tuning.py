@@ -60,7 +60,7 @@ class OptunaTuner:
         # fine-tuning. Only meaningful when cfg.training_mode == "finetune"
         # (it is, for every backbone in this project) — different
         # backbones/depths may want a different amount unfrozen.
-        cfg.finetune_unfreeze_last_n_blocks = trial.suggest_int("finetune_unfreeze_last_n_blocks", 1, 4)
+        cfg.finetune_unfreeze_last_n_blocks = trial.suggest_int("finetune_unfreeze_last_n_blocks", 0, 4)
         cfg.num_epochs = self.base_config.optuna_quick_epochs  # short runs during search (don't use all epoch for trail)
 
         set_seed(cfg.base_seed)
