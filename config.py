@@ -71,8 +71,8 @@ class Config:
     learning_rate: float = 1e-4
     weight_decay: float = 1e-4
     lr_scheduler: str = "cosine"   # "cosine" | "step" | "none"
-    num_epochs: int = 20
-    early_stopping_patience: int = 5
+    num_epochs: int = 50
+    early_stopping_patience: int = 6
     # ---- classifier head added on top of the backbone ----
     head_hidden_dim: int = 256
     head_dropout: float = 0.3
