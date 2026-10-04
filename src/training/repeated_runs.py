@@ -37,6 +37,8 @@ import copy
 import dataclasses
 from pathlib import Path
 
+import torch
+
 from src.utils.seed import set_seed
 from src.utils.logger import ExperimentLogger
 from src.utils.checkpoint import CheckpointManager
@@ -68,15 +70,65 @@ class ExperimentRunner:
         return self.config.output_root / "logs" / f"{run_id}_metrics.json"
 
     # load metrics file path
-    def _load_completed_run(self, run_id: str) -> dict:
-        """Loads a previously-saved run's metrics (without confusion_matrix/
-        history, which weren't saved to JSON — see log_run_summary usage
-        below). Good enough for the mean±SD/significance tables; if you
-        need the confusion matrix or training curves for an ALREADY
-        completed run, retrain it (or don't delete outputs/ between
-        sessions if you'll want those plots)."""
+    def _load_completed_run(self, run_id: str, backbone_name: str, cfg) -> dict:
+        """
+        Loads a previously-saved run's result. <run_id>_metrics.json alone
+        doesn't include confusion_matrix/history (those are deliberately
+        left out of that file — see the save_json call in run_all()), so
+        this reconstructs both from that run's saved CHECKPOINT instead of
+        requiring a full retrain:
+
+          - history: stored directly inside the checkpoint already (Trainer
+            saves self.history every epoch) — just read it back, no
+            recomputation needed.
+          - confusion_matrix: NOT stored in the checkpoint, so it's
+            recomputed by reloading the checkpointed model weights and
+            re-running evaluation on the test set. This is cheap (one
+            forward pass over the test set, no training) compared to
+            retraining the whole run from scratch.
+
+        This is what lets run_all_experiments.py's plotting/GradCAM code
+        treat every run uniformly — freshly trained or resumed from a
+        previous session — without ever needing to retrain just to get a
+        training-curve plot or confusion matrix back.
+        """
         with open(self._completed_metrics_path(run_id)) as f:
-            return json.load(f)
+            test_metrics = json.load(f)
+
+        checkpoint_manager = CheckpointManager(self.config.output_root / "checkpoints", run_id)
+        if not checkpoint_manager.has_checkpoint():
+            print(f"  WARNING: '{run_id}' is marked completed but has no saved checkpoint — "
+                  f"'history'/'confusion_matrix' will be missing from its result, which will "
+                  f"break plotting/GradCAM for this run. (Did outputs/checkpoints/{run_id} "
+                  f"get deleted after this run finished?)")
+            return test_metrics
+
+        try:
+            ckpt = (checkpoint_manager.load_best(map_location="cpu")
+                    if checkpoint_manager.has_best_checkpoint()
+                    else checkpoint_manager.load_latest(map_location="cpu"))
+            test_metrics["history"] = ckpt["history"]
+
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            model = CNNClassifier(
+                backbone_name=backbone_name,
+                num_classes=self.data_module.num_classes,
+                head_hidden_dim=cfg.head_hidden_dim,
+                head_dropout=cfg.head_dropout,
+                pretrained=False,  # weights get overwritten by the checkpoint right below
+            )
+            model.load_state_dict(ckpt["model_state"])
+            model.to(device)
+
+            evaluator = Evaluator(self.data_module.class_names)
+            recomputed = evaluator.evaluate(model, self.data_module.test_loader(), device)
+            test_metrics["confusion_matrix"] = recomputed["confusion_matrix"]
+        except (RuntimeError, KeyError, OSError) as e:
+            print(f"  WARNING: could not reconstruct history/confusion_matrix for completed "
+                  f"run '{run_id}' from its checkpoint ({e}) — plotting/GradCAM may fail or "
+                  f"use incomplete data for this run.")
+
+        return test_metrics
 
     # ------------------------------------------------------------
     # NEW: load this backbone's tuned hyperparameters (if any), with
@@ -163,7 +215,7 @@ class ExperimentRunner:
                 # previous (now-disconnected) session? ----
                 if self._completed_metrics_path(run_id).exists():  # check whether this experiment already finished
                     print(f"\n--- {run_id} — already completed, loading saved result, skipping retrain ---")
-                    self.results[backbone_name].append(self._load_completed_run(run_id))
+                    self.results[backbone_name].append(self._load_completed_run(run_id, backbone_name, cfg))
                     continue
 
                 print(f"\n--- {run_id} ---")
