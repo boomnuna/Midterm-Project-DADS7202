@@ -62,7 +62,7 @@ class Config:
     training_mode: str = "finetune"
     finetune_unfreeze_last_n_blocks: int = 2
     # ---- repeated runs (for mean±SD reporting, assignment section 6) ----
-    num_repeats: int = 5           # assignment asks for 3-10 repeats per architecture
+    num_repeats: int = 10           # assignment asks for 3-10 repeats per architecture
     base_seed: int = 100           # repeat i uses seed = base_seed + i
 
     #TODO: Hyperparameter
