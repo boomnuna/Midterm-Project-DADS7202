@@ -134,6 +134,7 @@ def main():
     raw_transform = TransformFactory(config.image_size).raw_transform()
     eval_transform = TransformFactory(config.image_size).eval_transform()
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    import json  # NEW: needed to re-read each run's own saved config below
 
     # grab a small fixed sample of test images to keep GradCAM comparable across architectures
     sample_paths = []
@@ -156,11 +157,35 @@ def main():
                   f"skipping GradCAM for {backbone_name}.")
             continue
 
+        # FIXED: read THIS run's own saved head_hidden_dim/head_dropout
+        # instead of trusting config.head_hidden_dim/config.head_dropout.
+        # Each backbone gets its own Optuna-tuned hyperparameters (see
+        # "Loaded tuned hyperparameters for <backbone>: {...}" at the start
+        # of each architecture's block above) which can differ from the
+        # global config defaults — e.g. vgg16 was actually trained with
+        # head_hidden_dim=128, not whatever config.head_hidden_dim happens
+        # to be. Building the model with the wrong dims here causes a
+        # state_dict shape mismatch when loading the checkpoint below.
+        # logs/<run_id>_config.json already records the EXACT values used
+        # to train this specific run, so read from there instead.
+        run_config_path = config.output_root / "logs" / f"{best_run_id}_config.json"
+        try:
+            with open(run_config_path) as f:
+                run_config = json.load(f)
+            head_hidden_dim = run_config.get("head_hidden_dim", config.head_hidden_dim)
+            head_dropout = run_config.get("head_dropout", config.head_dropout)
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"  WARNING: could not read {run_config_path} ({e}) — falling back to "
+                  f"config.head_hidden_dim/head_dropout, which may not match this run's "
+                  f"actual architecture and could cause a checkpoint load failure below.")
+            head_hidden_dim = config.head_hidden_dim
+            head_dropout = config.head_dropout
+
         model = CNNClassifier(
             backbone_name=backbone_name,
             num_classes=data_module.num_classes,
-            head_hidden_dim=config.head_hidden_dim,
-            head_dropout=config.head_dropout,
+            head_hidden_dim=head_hidden_dim,
+            head_dropout=head_dropout,
             pretrained=False,  # weights get overwritten by the checkpoint right below
         )
 
