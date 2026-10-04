@@ -26,6 +26,7 @@ Usage:
 """
 
 import sys
+import json
 import argparse
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
@@ -96,26 +97,50 @@ def load_trained_model(config, data_module, backbone_name: str, run_id: str, dev
                 f"This checkpoint directory may be corrupted — re-run training for this run_id."
             ) from e
 
+    # ---- FIXED: read THIS run's own saved head_hidden_dim/head_dropout
+    # instead of trusting config.head_hidden_dim/config.head_dropout.
+    # Each backbone gets its own Optuna-tuned hyperparameters (see
+    # ExperimentRunner._load_best_params), which can differ from the
+    # global config defaults — e.g. vgg16 was actually trained with
+    # head_hidden_dim=128, not whatever config.head_hidden_dim happens to
+    # be. Building the model with the wrong dims here causes a
+    # state_dict shape mismatch when loading the checkpoint (same bug
+    # that originally broke GradCAM for vgg16 in run_all_experiments.py).
+    # logs/<run_id>_config.json already records the EXACT values used to
+    # train this specific run, so read from there instead.
+    run_config_path = config.output_root / "logs" / f"{run_id}_config.json"
+    try:
+        with open(run_config_path) as f:
+            run_config = json.load(f)
+        head_hidden_dim = run_config.get("head_hidden_dim", config.head_hidden_dim)
+        head_dropout = run_config.get("head_dropout", config.head_dropout)
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"WARNING: could not read {run_config_path} ({e}) — falling back to "
+              f"config.head_hidden_dim/head_dropout, which may not match this run's "
+              f"actual architecture and could cause a checkpoint load failure below.")
+        head_hidden_dim = config.head_hidden_dim
+        head_dropout = config.head_dropout
+
     model = CNNClassifier(
         backbone_name=backbone_name,
         num_classes=data_module.num_classes,
-        head_hidden_dim=config.head_hidden_dim,
-        head_dropout=config.head_dropout,
+        head_hidden_dim=head_hidden_dim,
+        head_dropout=head_dropout,
         pretrained=False,  # weights get overwritten by the checkpoint right below anyway
     )
 
     # ---- failure mode 3: architecture mismatch — e.g. --backbone doesn't
-    # match what this run_id was actually trained with, or config.py's
-    # head_hidden_dim/head_dropout/num_classes changed since training ----
+    # match what this run_id was actually trained with, or the dataset's
+    # num_classes changed since training ----
     try:
         model.load_state_dict(ckpt["model_state"])
     except RuntimeError as e:
         raise RuntimeError(
             f"Checkpoint for run_id='{run_id}' doesn't match the model architecture being "
             f"built (backbone='{backbone_name}', num_classes={data_module.num_classes}, "
-            f"head_hidden_dim={config.head_hidden_dim}, head_dropout={config.head_dropout}). "
-            f"This usually means --backbone is wrong for this run_id, or config.py's "
-            f"head_hidden_dim/head_dropout/dataset changed since this run was trained.\n"
+            f"head_hidden_dim={head_hidden_dim}, head_dropout={head_dropout}). "
+            f"This usually means --backbone is wrong for this run_id, or the dataset's "
+            f"num_classes changed since this run was trained.\n"
             f"Original error: {e}"
         ) from e
 
