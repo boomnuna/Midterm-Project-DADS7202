@@ -167,9 +167,24 @@ def save_grid(results: list, class_names: list, raw_transform, title: str, save_
         print(f"  (nothing to plot for '{title}' — skipping)")
         return
 
+    # FIXED: cap n_cols to the actual number of results, so a tiny result
+    # set (e.g. only 1 misclassified image) doesn't still allocate a full
+    # n_cols-wide grid. plt.subplots() returns a BARE Axes only when the
+    # grid is exactly 1x1 — any grid with more than 1 cell (even 1 row x 5
+    # cols for a single image, which is what happened before this fix)
+    # returns a numpy array of Axes instead. The old code checked
+    # `len(results) > 1` to decide whether to wrap/flatten `axes`, but the
+    # grid shape depends on n_rows*n_cols, not on len(results) — with 1
+    # result and the default n_cols=5, that produced a 1x5 grid (an array
+    # of 5 Axes), got wrapped as `[axes]` (a 1-element list containing
+    # that whole array), and ax.imshow() was then called on the array
+    # itself instead of an Axes object. Capping n_cols here means the grid
+    # size always matches len(results), and checking the real subplot
+    # count (not len(results)) decides whether axes needs flattening.
+    n_cols = min(n_cols, len(results))
     n_rows = (len(results) + n_cols - 1) // n_cols
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(3 * n_cols, 3.3 * n_rows))
-    axes = axes.flatten() if len(results) > 1 else [axes]
+    axes = axes.flatten() if n_rows * n_cols > 1 else [axes]
 
     for ax, (path, true_idx, pred_idx) in zip(axes, results):
         img = Image.open(path).convert("RGB")
