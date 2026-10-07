@@ -10,17 +10,19 @@ just example predictions to screenshot for your slides.
 Produces:
   - a printed text table (quick terminal check)
   - a saved image grid: outputs/pretrained_baseline_examples.png
-    (10 real images, each labeled with true class vs. ImageNet's top-1
+    (real images from EVERY class, each labeled with true class vs. ImageNet's top-1
     guess — THIS is what actually goes on your slide, not the text table)
 
 Usage:
     python -m scripts.show_pretrained_baseline
-    python -m scripts.show_pretrained_baseline --num-examples 15
+    python -m scripts.show_pretrained_baseline --per-class 5
 """
 
 import sys
 import json
 import argparse
+import random
+from collections import defaultdict
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
@@ -42,29 +44,43 @@ def load_imagenet_class_names():
     return weights.meta["categories"]
 
 
-def get_sample_image_paths(data_module: DataModule, num_examples: int) -> list:
+def get_sample_image_paths(data_module: DataModule, per_class: int, seed: int = 0) -> list:
     """
     Pulls real file paths (not just tensors) from the test set so we can
     both DISPLAY the original image and run it through the model —
     mirrors the same underlying-dataset access pattern used for GradCAM
     sampling in run_all_experiments.py.
+
+    FIXED: picks `per_class` images from EACH class. The old version took
+    the first N test images in dataset order, but ImageFolder sorts samples
+    by class, so the first 10 images were all from the first class
+    (gomu_gomu) and the other 3 classes never showed up.
     """
     test_dataset = data_module.test_dataset
     underlying = test_dataset.dataset if hasattr(test_dataset, "dataset") else test_dataset
+    if hasattr(test_dataset, "indices"):
+        all_samples = [underlying.samples[i] for i in test_dataset.indices]
+    else:
+        all_samples = list(underlying.samples)
 
+    by_class = defaultdict(list)
+    for path, label in all_samples:
+        by_class[label].append((path, label))
+
+    rng = random.Random(seed)  # fixed seed -> same images every run
     paths_and_labels = []
-    n = min(num_examples, len(test_dataset))
-    for i in range(n):
-        idx = test_dataset.indices[i] if hasattr(test_dataset, "indices") else i
-        path, label = underlying.samples[idx]
-        paths_and_labels.append((path, label))
+    for label in sorted(by_class):
+        items = by_class[label]
+        paths_and_labels.extend(rng.sample(items, min(per_class, len(items))))
     return paths_and_labels
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num-examples", type=int, default=10,
-                         help="How many real images to show/save (default: 10)")
+    parser.add_argument("--per-class", type=int, default=3,
+                         help="How many real images to show PER CLASS (default: 3 -> 12 total for 4 classes)")
+    parser.add_argument("--seed", type=int, default=0,
+                         help="Random seed for which test images get picked (default: 0)")
     args = parser.parse_args()
 
     config = Config()
@@ -78,7 +94,7 @@ def main():
     raw_transform = TransformFactory(config.image_size).raw_transform()
     eval_transform = TransformFactory(config.image_size).eval_transform()
 
-    samples = get_sample_image_paths(data_module, args.num_examples)
+    samples = get_sample_image_paths(data_module, args.per_class, args.seed)
 
     print("Pretrained ResNet50 (ImageNet, untouched) predictions on OUR dataset:\n")
     print("-" * 70)
