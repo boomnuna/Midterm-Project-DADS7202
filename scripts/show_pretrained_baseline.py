@@ -44,7 +44,7 @@ def load_imagenet_class_names():
     return weights.meta["categories"]
 
 
-def get_sample_image_paths(data_module: DataModule, per_class: int, seed: int = 0) -> list:
+def get_sample_image_paths(data_module: DataModule, per_class: int, seed=None) -> list:
     """
     Pulls real file paths (not just tensors) from the test set so we can
     both DISPLAY the original image and run it through the model —
@@ -67,7 +67,7 @@ def get_sample_image_paths(data_module: DataModule, per_class: int, seed: int = 
     for path, label in all_samples:
         by_class[label].append((path, label))
 
-    rng = random.Random(seed)  # fixed seed -> same images every run
+    rng = random.Random(seed)  # seed=None -> different random images every run
     paths_and_labels = []
     for label in sorted(by_class):
         items = by_class[label]
@@ -77,10 +77,11 @@ def get_sample_image_paths(data_module: DataModule, per_class: int, seed: int = 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--per-class", type=int, default=3,
-                         help="How many real images to show PER CLASS (default: 3 -> 12 total for 4 classes)")
-    parser.add_argument("--seed", type=int, default=0,
-                         help="Random seed for which test images get picked (default: 0)")
+    parser.add_argument("--per-class", type=int, default=4,
+                         help="How many real images to show PER CLASS (default: 4 -> 4x4 = 16 total for 4 classes)")
+    parser.add_argument("--seed", type=int, default=None,
+                         help="Optional: fix the random pick so the SAME images are chosen again "
+                              "(default: none, i.e. different random images every run)")
     args = parser.parse_args()
 
     config = Config()
@@ -119,7 +120,7 @@ def main():
 
     # ---- build and save the image grid — THIS is the actual slide asset ----
     n = len(results)
-    n_cols = 5
+    n_cols = data_module.num_classes  # 4 classes x 4 per class -> each ROW is one class
     n_rows = (n + n_cols - 1) // n_cols
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(3 * n_cols, 3.5 * n_rows))
     axes = axes.flatten() if n > 1 else [axes]
