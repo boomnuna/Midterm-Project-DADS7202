@@ -9,13 +9,17 @@ just example predictions to screenshot for your slides.
 
 Produces:
   - a printed text table (quick terminal check)
-  - a saved image grid: outputs/pretrained_baseline_examples.png
+  - a saved image grid: outputs/pretrained_baseline_<backbone>.png
     (real images from EVERY class, each labeled with true class vs. ImageNet's top-1
     guess — THIS is what actually goes on your slide, not the text table)
 
 Usage:
-    python -m scripts.show_pretrained_baseline
-    python -m scripts.show_pretrained_baseline --per-class 5
+    python -m scripts.show_pretrained_baseline                          # resnet50 (default)
+    python -m scripts.show_pretrained_baseline --backbone vgg16
+    python -m scripts.show_pretrained_baseline --backbone efficientnet_b0 --per-class 5
+
+  --backbone: resnet50 | vgg16 | efficientnet_b0 | mobilenet_v3_small
+  Output file includes the model name: outputs/pretrained_baseline_<backbone>.png
 """
 
 import sys
@@ -30,18 +34,26 @@ import torch
 from PIL import Image
 import matplotlib.pyplot as plt
 from torchvision import models
-from torchvision.models import ResNet50_Weights
 
 from config import Config
 from src.data.dataset import DataModule
 from src.data.transforms import TransformFactory
 
 # get all 1000 imagenet class name 
-def load_imagenet_class_names():
+BACKBONES = ["resnet50", "vgg16", "efficientnet_b0", "mobilenet_v3_small"]
+
+
+def load_pretrained_model(backbone: str):
+    """
+    Loads the torchvision model with its default ImageNet weights and the
+    matching 1000 ImageNet class names (taken from the same weights object,
+    so the names always line up with the model).
+    """
     print("-" * 70)
-    print("Loading pretrained ResNet50 (ImageNet weights)...")
-    weights = ResNet50_Weights.IMAGENET1K_V2
-    return weights.meta["categories"]
+    print(f"Loading pretrained {backbone} (ImageNet weights)...")
+    weights = models.get_model_weights(backbone).DEFAULT
+    model = models.get_model(backbone, weights=weights)
+    return model, weights.meta["categories"]
 
 
 def get_sample_image_paths(data_module: DataModule, per_class: int, seed=None) -> list:
@@ -77,6 +89,8 @@ def get_sample_image_paths(data_module: DataModule, per_class: int, seed=None) -
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--backbone", default="resnet50", choices=BACKBONES,
+                         help="Which pretrained model to show (default: resnet50)")
     parser.add_argument("--per-class", type=int, default=4,
                          help="How many real images to show PER CLASS (default: 4 -> 4x4 = 16 total for 4 classes)")
     parser.add_argument("--seed", type=int, default=None,
@@ -86,10 +100,10 @@ def main():
 
     config = Config()
     data_module = DataModule(config)
-    imagenet_classes = load_imagenet_class_names()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V2).to(device)
+    model, imagenet_classes = load_pretrained_model(args.backbone)
+    model = model.to(device)
     model.eval()
 
     raw_transform = TransformFactory(config.image_size).raw_transform()
@@ -97,7 +111,7 @@ def main():
 
     samples = get_sample_image_paths(data_module, args.per_class, args.seed)
 
-    print("Pretrained ResNet50 (ImageNet, untouched) predictions on OUR dataset:\n")
+    print(f"Pretrained {args.backbone} (ImageNet, untouched) predictions on OUR dataset:\n")
     print("-" * 70)
     print(f"{'true class (ours)':25s} | top-1 ImageNet prediction")
     print("-" * 70)
@@ -138,10 +152,10 @@ def main():
     for ax in axes[len(results):]:
         ax.axis("off")
 
-    fig.suptitle("Pretrained ResNet50 (ImageNet, NOT finetuned) on our dataset", fontsize=13)
+    fig.suptitle(f"Pretrained {args.backbone} (ImageNet, NOT finetuned) on our dataset", fontsize=13)
     plt.tight_layout()
 
-    save_path = config.output_root / "pretrained_baseline_examples.png"
+    save_path = config.output_root / f"pretrained_baseline_{args.backbone}.png"
     plt.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
