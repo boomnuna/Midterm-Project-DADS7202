@@ -41,6 +41,8 @@ import sys
 import json
 import pickle
 import argparse
+import random
+from collections import defaultdict
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
@@ -67,6 +69,12 @@ def main():
     parser.add_argument("--backbones", nargs="+", default=None,
                          help="Run only these backbones this session (default: all in config.py). "
                               "Useful for splitting work across Colab sessions/group members.")
+    parser.add_argument("--gradcam-per-class", type=int, default=5,
+                         help="How many random test images PER CLASS to explain with GradCAM "
+                              "(default: 5). The same images are used for every architecture.")
+    parser.add_argument("--gradcam-seed", type=int, default=None,
+                         help="Optional: fix the random pick so the SAME images are chosen again "
+                              "(default: none = different random images every run)")
     args = parser.parse_args()
 
     config = Config()
@@ -134,15 +142,28 @@ def main():
     raw_transform = TransformFactory(config.image_size).raw_transform()
     eval_transform = TransformFactory(config.image_size).eval_transform()
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    import json  # NEW: needed to re-read each run's own saved config below
 
-    # grab a small fixed sample of test images to keep GradCAM comparable across architectures
-    sample_paths = []
+    # pick N RANDOM test images from EACH class (picked once, so every architecture is
+    # explained on the same images). The old version took the first 5 test images, which
+    # are all from one class whenever the test folder is sorted by class.
     test_dataset = data_module.test_dataset
     underlying = test_dataset.dataset if hasattr(test_dataset, "dataset") else test_dataset
-    for i in range(min(5, len(test_dataset))):
-        idx = test_dataset.indices[i] if hasattr(test_dataset, "indices") else i
-        sample_paths.append(underlying.samples[idx][0])
+    if hasattr(test_dataset, "indices"):
+        all_test_samples = [underlying.samples[i] for i in test_dataset.indices]
+    else:
+        all_test_samples = list(underlying.samples)
+
+    paths_by_class = defaultdict(list)
+    for path, label in all_test_samples:
+        paths_by_class[label].append(path)
+
+    rng = random.Random(args.gradcam_seed)
+    sample_items = []  # (true_class_name, image_path)
+    for label in sorted(paths_by_class):
+        chosen = rng.sample(paths_by_class[label], min(args.gradcam_per_class, len(paths_by_class[label])))
+        sample_items.extend((data_module.class_names[label], p) for p in chosen)
+    print(f"GradCAM sample: {len(sample_items)} test images "
+          f"({args.gradcam_per_class} per class, {'random' if args.gradcam_seed is None else f'seed={args.gradcam_seed}'})")
 
     for backbone_name, (best_seed, best_run_id) in best_run_ids.items():
         checkpoint_manager = CheckpointManager(config.output_root / "checkpoints", best_run_id)
@@ -208,17 +229,25 @@ def main():
         gradcam = GradCAM(model)
         out_dir = config.output_root / backbone_name / "gradcam"
         out_dir.mkdir(parents=True, exist_ok=True)
+        # the sample is random, so clear GradCAM images from earlier runs of this
+        # script (otherwise old and new pictures would pile up in the same folders)
+        for old_png in out_dir.rglob("gradcam_*.png"):
+            old_png.unlink()
 
-        for img_path in sample_paths:
+        for true_class, img_path in sample_items:
             from PIL import Image
             img = Image.open(img_path).convert("RGB")
             raw_np = raw_transform(img).permute(1, 2, 0).numpy()
             input_tensor = eval_transform(img).unsqueeze(0)
 
+            # one sub-folder per TRUE class, e.g. gradcam/mera_mera/gradcam_<image>.png
+            # (the overlay title shows what the model PREDICTED)
+            class_dir = out_dir / true_class
+            class_dir.mkdir(parents=True, exist_ok=True)
             fname = Path(img_path).stem
             gradcam.visualize(
                 input_tensor, raw_np, data_module.class_names,
-                save_path=out_dir / f"gradcam_{fname}.png",
+                save_path=class_dir / f"gradcam_{fname}.png",
             )
 
         best_run_metrics = next(r for r in results[backbone_name] if r["seed"] == best_seed)

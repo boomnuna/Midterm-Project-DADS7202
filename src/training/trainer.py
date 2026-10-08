@@ -168,6 +168,19 @@ class Trainer:
         return start_epoch, ckpt["best_val_loss"], ckpt["epochs_without_improvement"]
 
     # ------------------------------------------------------------
+    # Load the weights saved in best.pt back into the model. Needed after a
+    # RESUME: best_state (in-memory copy of the best weights) only exists for
+    # improvements seen in THIS session, so if no epoch after the resume point
+    # beat the earlier best, best_state is None and the model would otherwise
+    # be evaluated with the LAST epoch's weights instead of the best ones.
+    def _restore_best_from_checkpoint(self) -> bool:
+        if self.checkpoint_manager is None or not self.checkpoint_manager.has_best_checkpoint():
+            return False
+        best_ckpt = self.checkpoint_manager.load_best(map_location=self.device)
+        self.model.load_state_dict(best_ckpt["model_state"])
+        return True
+
+    # ------------------------------------------------------------
     # NEW: report this epoch's val_acc to an Optuna trial (if one was
     # passed to fit()) and raise optuna.TrialPruned() if Optuna decides
     # this trial is underperforming and should be cut short.
@@ -204,6 +217,8 @@ class Trainer:
         if start_epoch >= self.config.num_epochs:
             self._log(f"Checkpoint already reached target num_epochs="
                       f"{self.config.num_epochs} — nothing to train, returning existing history.")
+            if self._restore_best_from_checkpoint():
+                self._log("  restored best weights from best.pt for evaluation.")
             return self.history
 
         best_state = None
@@ -287,6 +302,10 @@ class Trainer:
 
         if best_state is not None:
             self.model.load_state_dict(best_state)
+        elif self._restore_best_from_checkpoint():
+            # resumed run where no later epoch improved on the earlier best
+            self._log("  restored best weights from best.pt (no epoch after the resume "
+                      "point improved on the earlier best).")
 
         if verbose:
             avg_epoch_time = sum(self.history["epoch_time"]) / len(self.history["epoch_time"])

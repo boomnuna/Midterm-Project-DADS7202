@@ -260,20 +260,25 @@ class ExperimentRunner:
                     head_dropout=cfg.head_dropout,
                 )
 
+                # create the Trainer — note: cfg, not self.config, so this
+                # backbone actually trains with ITS OWN tuned hyperparameters.
+                # (Trainer.__init__ is what freezes the backbone, so it must be
+                # created BEFORE model.summary() below — otherwise the summary's
+                # "trainable" column wrongly shows every layer as trainable.)
+                trainer = Trainer(model, cfg, class_weights=class_weights,
+                                   logger=logger, wandb_run=wandb_run,
+                                   checkpoint_manager=checkpoint_manager)
+
                 # print the architecture summary once per backbone (not once
                 # per repeat — same architecture every repeat, only seed
                 # differs, so repeating this 5-10x would just be noise)
                 if repeat_i == 0:
-                    print(f"\nModel summary for {backbone_name}:")
+                    print(f"\nModel summary for {backbone_name} "
+                          f"(training_mode={cfg.training_mode}):")
+                    print(f"Trainable parameters: {model.trainable_parameter_count():,}")
                     summary_text = model.summary(image_size=cfg.image_size)
                     logger.save_json({"model_summary": summary_text},
                                      filename=f"{backbone_name}_model_summary.json")
-
-                # create the Trainer — note: cfg, not self.config, so this
-                # backbone actually trains with ITS OWN tuned hyperparameters
-                trainer = Trainer(model, cfg, class_weights=class_weights,
-                                   logger=logger, wandb_run=wandb_run,
-                                   checkpoint_manager=checkpoint_manager)
 
                 # train the model
                 history = trainer.fit(
@@ -308,6 +313,9 @@ class ExperimentRunner:
                     "image_size": cfg.image_size,
                     "head_hidden_dim": cfg.head_hidden_dim,
                     "head_dropout": cfg.head_dropout,
+                    "label_smoothing": cfg.label_smoothing,
+                    "early_stopping_patience": cfg.early_stopping_patience,
+                    "early_stopping_min_delta": cfg.early_stopping_min_delta,
                     "finetune_unfreeze_last_n_blocks": cfg.finetune_unfreeze_last_n_blocks,
                     "imbalance_strategy": cfg.imbalance_strategy,
                     # ---- results ----

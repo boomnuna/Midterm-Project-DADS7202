@@ -73,16 +73,18 @@ def main():
         head_hidden_dim=config.head_hidden_dim,
         head_dropout=config.head_dropout,
     )
+
+    # create Trainer — this is what freezes the backbone, so it must come
+    # BEFORE the parameter count / summary below (otherwise they would wrongly
+    # report every layer as trainable)
+    trainer = Trainer(model, config, class_weights=class_weights, logger=logger,
+                       checkpoint_manager=checkpoint_manager)
     print(f"Trainable parameters: {model.trainable_parameter_count():,}")
 
     print("-" * 70)
-    print(f"Model summary ({args.backbone}):")
+    print(f"Model summary ({args.backbone}, training_mode={config.training_mode}):")
     summary_text = model.summary(image_size=config.image_size)
     logger.save_json({"model_summary": summary_text}, filename=f"{run_id}_model_summary.json")
-
-    # create Trainer 
-    trainer = Trainer(model, config, class_weights=class_weights, logger=logger,
-                       checkpoint_manager=checkpoint_manager)
     # fit model
     print("-" * 70)
     print("Starting model training...")
