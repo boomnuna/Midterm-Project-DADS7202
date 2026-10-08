@@ -57,7 +57,10 @@ class Trainer:
         self._apply_training_mode() # freeze bbackbone or not
 
         weight_tensor = class_weights.to(self.device) if class_weights is not None else None
-        self.criterion = nn.CrossEntropyLoss(weight=weight_tensor)
+        self.criterion = nn.CrossEntropyLoss(
+            weight=weight_tensor,
+            label_smoothing=getattr(self.config, "label_smoothing", 0.0),
+        )
         self.optimizer = self._build_optimizer()
         self.scheduler = self._build_scheduler()
 
@@ -106,6 +109,12 @@ class Trainer:
     def _run_epoch(self, loader, train: bool):
         # set model to train or validation mode
         self.model.train() if train else self.model.eval()
+        # Feature extraction = backbone is FIXED. requires_grad=False only
+        # freezes weights; BatchNorm layers would still update their running
+        # mean/var in train mode. Keep the backbone in eval mode so it is
+        # truly unchanged (only the head trains / uses dropout / batchnorm).
+        if train and self.config.training_mode == "feature_extract":
+            self.model.backbone.eval()
         # init metrics
         total_loss, correct, total = 0.0, 0, 0
 
@@ -245,7 +254,9 @@ class Trainer:
                 self._report_to_trial_and_maybe_prune(trial, val_acc, epoch)
 
             # for early stopping record
-            improved = val_loss < best_val_loss
+            # must beat the best loss by more than min_delta to count
+            min_delta = getattr(self.config, "early_stopping_min_delta", 0.0)
+            improved = val_loss < best_val_loss - min_delta
             if improved:
                 best_val_loss = val_loss
                 best_state = copy.deepcopy(self.model.state_dict())

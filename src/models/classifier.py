@@ -22,6 +22,7 @@ class ClassifierHead(nn.Module):
         super().__init__() # call the __init__() method of the parent class.
         self.net = nn.Sequential(
             nn.Linear(in_features, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),  # normalizes the hidden features -> steadier, faster training
             nn.ReLU(inplace=True),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, num_classes),

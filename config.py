@@ -59,7 +59,11 @@ class Config:
     # "finetune"        = unfreeze last N backbone blocks too
     #                      (matches assignment's "finetuning" option)
     #TODO: Training Method 
-    training_mode: str = "finetune"
+    # Project decision: freeze the whole backbone and train only the new head
+    # (small dataset, ~300-400 images/class, results already ~98-99%).
+    training_mode: str = "feature_extract"
+    # Only used when training_mode == "finetune". Kept so older scripts that
+    # read this field (e.g. the results CSV in repeated_runs.py) don't break.
     finetune_unfreeze_last_n_blocks: int = 2
     # ---- repeated runs (for mean±SD reporting, assignment section 6) ----
     num_repeats: int = 10           # assignment asks for 3-10 repeats per architecture
@@ -73,6 +77,13 @@ class Config:
     lr_scheduler: str = "cosine"   # "cosine" | "step" | "none"
     num_epochs: int = 50
     early_stopping_patience: int = 7
+    # An epoch only counts as an improvement if val_loss drops by MORE than
+    # this. Stops tiny, noisy gains from resetting the patience counter.
+    # (Label smoothing keeps val_loss above ~0.35, so 1e-3 is a small step.)
+    early_stopping_min_delta: float = 1e-4
+    # Label smoothing for CrossEntropyLoss (0.0 = off). Same value for every
+    # backbone so the comparison stays fair.
+    label_smoothing: float = 0.1
     # ---- classifier head added on top of the backbone ----
     head_hidden_dim: int = 256
     head_dropout: float = 0.3
@@ -92,8 +103,8 @@ class Config:
 
     #TODO: Optuna
     use_optuna: bool = False
-    optuna_n_trials: int = 30
-    optuna_quick_epochs: int = 10   # shorter than num_epochs, just for the search phase
+    optuna_n_trials: int = 25
+    optuna_quick_epochs: int = 9   # shorter than num_epochs, just for the search phase
     optuna_storage: str = "sqlite:///outputs/optuna_study.db"
     # ^ file-based storage works for one person tuning locally. For a
     # group to share trials across machines, point this at a shared
@@ -118,5 +129,3 @@ class Config:
         d["data_root"] = str(self.data_root)
         d["output_root"] = str(self.output_root)
         return d
-
-

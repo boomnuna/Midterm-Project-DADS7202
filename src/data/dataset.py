@@ -182,6 +182,7 @@ class DataModule:
         return DataLoader(
             self.train_dataset, batch_size=self.config.batch_size,
             shuffle=shuffle, num_workers=self.config.num_workers, pin_memory=self._pin_memory,
+            drop_last=True,  # BatchNorm in the head errors if the last batch has only 1 image
         )
 
     def val_loader(self) -> DataLoader:
