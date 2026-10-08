@@ -77,7 +77,7 @@ class CNNClassifier(nn.Module):
     def gradcam_target_layer(self):
         return BackboneFactory.gradcam_target_layer(self.backbone_name, self.backbone)
 
-        # ------------------------------------------------------------
+    # ------------------------------------------------------------
     def summary(self, image_size: int = 224, batch_size: int = 1, depth: int = 3) -> str:
         """
         Prints (and returns as a string) a Keras-style layer-by-layer
