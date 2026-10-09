@@ -59,11 +59,11 @@ class Config:
     # "finetune"        = unfreeze last N backbone blocks too
     #                      (matches assignment's "finetuning" option)
     #TODO: Training Method 
-    # Project decision: freeze the whole backbone and train only the new head
-    # (small dataset, ~300-400 images/class, results already ~98-99%).
-    training_mode: str = "feature_extract"
-    # Only used when training_mode == "finetune". Kept so older scripts that
-    # read this field (e.g. the results CSV in repeated_runs.py) don't break.
+    # Experiment result: freeze-all (feature_extract) scored significantly lower
+    # than fine-tuning on all 4 backbones, so we are back to "finetune".
+    training_mode: str = "finetune"
+    # Default only: Optuna searches this per backbone (0-4) and the tuned value
+    # from best_params_<backbone>.json overrides it in repeated_runs.py.
     finetune_unfreeze_last_n_blocks: int = 2
     # ---- repeated runs (for mean±SD reporting, assignment section 6) ----
     num_repeats: int = 10           # assignment asks for 3-10 repeats per architecture
@@ -79,7 +79,7 @@ class Config:
     early_stopping_patience: int = 7
     # An epoch only counts as an improvement if val_loss drops by MORE than
     # this. Stops tiny, noisy gains from resetting the patience counter.
-    # (Label smoothing keeps val_loss above ~0.35, so 1e-3 is a small step.)
+    # (Label smoothing keeps val_loss above ~0.35, so 1e-4 is a small step.)
     early_stopping_min_delta: float = 1e-4
     # Label smoothing for CrossEntropyLoss (0.0 = off). Same value for every
     # backbone so the comparison stays fair.

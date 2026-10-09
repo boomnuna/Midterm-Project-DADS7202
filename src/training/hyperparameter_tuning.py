@@ -56,9 +56,9 @@ class OptunaTuner:
         cfg.head_dropout = trial.suggest_float("head_dropout", 0.1, 0.5) # num of dropout
         cfg.head_hidden_dim = trial.suggest_categorical("head_hidden_dim", [128, 256, 512]) # hidden layer size
         cfg.optimizer_name = trial.suggest_categorical("optimizer_name", ["adamw", "sgd"]) # optimizer type
-        # NOTE: finetune_unfreeze_last_n_blocks is NOT searched any more —
-        # the project now uses training_mode="feature_extract" (whole
-        # backbone frozen, only the head trains), so it has no effect.
+        # how many of the LAST backbone blocks to unfreeze (0 = head only).
+        # Only has an effect when cfg.training_mode == "finetune".
+        cfg.finetune_unfreeze_last_n_blocks = trial.suggest_int("finetune_unfreeze_last_n_blocks", 1, 4)
         cfg.num_epochs = self.base_config.optuna_quick_epochs  # short runs during search (don't use all epoch for trail)
 
         set_seed(cfg.base_seed)
