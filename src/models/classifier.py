@@ -64,7 +64,15 @@ class CNNClassifier(nn.Module):
         """Unfreezes the last n entries of self.block_groups (deepest
         layers first — these adapt most to a new dataset during
         finetuning, while early layers stay frozen as generic
-        edge/texture detectors)."""
+        edge/texture detectors).
+
+        n < 0 (e.g. -1) means UNFREEZE ALL: every backbone parameter
+        becomes trainable, including layers that are not part of
+        block_groups (e.g. ResNet50's conv1/bn1 stem)."""
+        if n < 0:
+            for param in self.backbone.parameters():
+                param.requires_grad = True
+            return
         blocks_to_unfreeze = self.block_groups[-n:] if n > 0 else []
         for block in blocks_to_unfreeze:
             for param in block.parameters():

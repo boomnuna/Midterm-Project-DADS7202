@@ -59,12 +59,12 @@ class Config:
     # "finetune"        = unfreeze last N backbone blocks too
     #                      (matches assignment's "finetuning" option)
     #TODO: Training Method 
-    # Experiment result: freeze-all (feature_extract) scored significantly lower
-    # than fine-tuning on all 4 backbones, so we are back to "finetune".
+    # Project comparison: "feature_extract" (freeze all) vs "finetune" with
+    # finetune_unfreeze_last_n_blocks=-1 (unfreeze all). Currently: unfreeze all.
     training_mode: str = "finetune"
-    # Default only: Optuna searches this per backbone (0-4) and the tuned value
-    # from best_params_<backbone>.json overrides it in repeated_runs.py.
-    finetune_unfreeze_last_n_blocks: int = 2
+    # -1 = UNFREEZE ALL backbone layers (project comparison: freeze all vs
+    # unfreeze all). n >= 0 = unfreeze only the last n blocks (0 = head only).
+    finetune_unfreeze_last_n_blocks: int = -1
     # ---- repeated runs (for mean±SD reporting, assignment section 6) ----
     num_repeats: int = 10           # assignment asks for 3-10 repeats per architecture
     base_seed: int = 100           # repeat i uses seed = base_seed + i
