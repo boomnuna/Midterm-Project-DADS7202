@@ -46,11 +46,15 @@ CSV_METRIC_COLUMNS = ["accuracy", "precision_macro", "recall_macro", "f1_macro"]
 
 
 def to_python(value):
-    """numpy -> plain python so it can be written to JSON."""
+    """numpy -> plain python (recursively, also inside dicts/lists) so it can be written to JSON."""
     if isinstance(value, np.ndarray):
         return value.tolist()
-    if isinstance(value, (np.floating, np.integer)):
+    if isinstance(value, (np.floating, np.integer, np.bool_)):
         return value.item()
+    if isinstance(value, dict):
+        return {str(k): to_python(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [to_python(v) for v in value]
     return value
 
 
@@ -164,16 +168,21 @@ def main():
     # ---- 1) logs/<run_id>_metrics.json ----
     for run_id, metrics in new_metrics.items():
         path = logs_dir / f"{run_id}_metrics.json"
-        old = {}
+        old = {"seed": int(run_id.rsplit("seed", 1)[1])}
         if path.exists():
             shutil.copy2(path, backup_dir / path.name)
-            with open(path) as f:
-                old = json.load(f)
-        else:
-            old = {"seed": int(run_id.rsplit("seed", 1)[1])}
-        old.update(metrics)
+            try:
+                with open(path) as f:
+                    old = json.load(f)
+            except json.JSONDecodeError:
+                # e.g. the file was left half-written by an earlier failed attempt;
+                # every metric is recomputed below anyway, so start from the seed only
+                print(f"  NOTE {run_id}: old metrics json unreadable -> rebuilt from the new evaluation")
+        old.update(to_python(metrics))
+        # serialise FIRST, then write: a failure can no longer leave a half-written file behind
+        text = json.dumps(old, indent=2, default=to_python)
         with open(path, "w") as f:
-            json.dump(old, f, indent=2)
+            f.write(text)
     print(f"\nUpdated {len(new_metrics)} metrics json files (old ones: {backup_dir})")
 
     # ---- 2) experiment_log.csv ----
