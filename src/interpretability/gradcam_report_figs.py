@@ -1,12 +1,13 @@
 """
 src/interpretability/gradcam_report_figs.py
 
-สร้างรูป GradCAM สำหรับรายงาน (รูปแบบเดียวกับตัวอย่าง: ต่อ backbone มี 2 แถว = Original / GradCAM)
+สร้างรูป GradCAM สำหรับรายงาน 
 ใช้ median seed ของแต่ละ backbone, อ่านผลเดิมอย่างเดียว (ไม่เทรนใหม่)
 
 ผลลัพธ์ (ต่อ 1 วิธีเทรน):
-  fig_correct_gomu_gomu.png, fig_correct_mera_mera.png, fig_correct_ope_ope.png, fig_correct_yami_yami.png
-      คลาสละ 5 รูป x 4 backbone  (รูปที่ทุก backbone ทายถูก)
+  fig_correct_summary.png
+      แถวบน = Original (1 รูปต่อคลาส), แถวถัดไป = GradCAM ของแต่ละ backbone, คอลัมน์ = คลาส
+      ถ้า backbone ใดทายรูปเหล่านี้ผิด จะแจ้งเตือนใน console และใต้ภาพเป็นสีแดง
   fig_wrong.png
       รูปที่ทายผิด "5 รูปแรก" ของแต่ละ backbone (แต่ละ backbone ผิดคนละรูปกันได้)
   selection.csv   รูปที่ใช้จริง + ผลทำนายของทุก backbone
@@ -16,7 +17,6 @@ src/interpretability/gradcam_report_figs.py
     python -m src.interpretability.gradcam_report_figs --tag freeze_all
 
 ตัวเลือก:
-    --no-replace     ไม่สลับรูปที่บาง backbone ทายผิด (ใช้รูปที่ขอตามเดิม แต่ชื่อใต้ภาพเป็นสีแดงถ้าทายผิด)
     --n-wrong 5      จำนวนรูปที่ผิดต่อ backbone
     --out PATH       ค่าเริ่มต้น: <output_root>/gradcam_report/<tag>
 """
@@ -47,12 +47,9 @@ from src.utils.checkpoint import CheckpointManager
 PRIMARY_METRIC = "f1_macro"
 
 # รูปที่ต้องการ (ตัด prefix gradcam_ ออกแล้ว) — คลาสละ 5 รูป
-WANTED = {
-    "gomu_gomu": ["gomu_gomu_0001", "gomu_gomu_0014", "gomu_gomu_0018", "gomu_gomu_0089", "gomu_gomu_0540"],
-    "mera_mera": ["mera_mera_0068", "mera_mera_0136", "mera_mera_0181", "mera_mera_0248", "mera_mera_0294"],
-    "ope_ope":   ["ope_ope_0030", "ope_ope_0107", "ope_ope_0147", "ope_ope_0286", "ope_ope_0373"],
-    "yami_yami": ["yami_yami_0074", "yami_yami_0081", "yami_yami_0094", "yami_yami_0132", "yami_yami_0185"],
-}
+# รูปที่ใช้ในรูป "ทายถูก": 1 รูปต่อคลาส (ตัด prefix gradcam_ ออกแล้ว)
+SUMMARY = {"gomu_gomu": "gomu_gomu_0089", "mera_mera": "mera_mera_0136",
+           "ope_ope": "ope_ope_0030", "yami_yami": "yami_yami_0074"}
 NICE = {"resnet50": "ResNet-50", "vgg16": "VGG-16", "efficientnet_b0": "EfficientNet-B0",
         "mobilenet_v3_small": "MobileNetV3-Small"}
 COL_OK, COL_BAD = "#1a7f1a", "#c0392b"
@@ -102,28 +99,67 @@ def explain(model, cam, path, raw_tf, eval_tf, device):
     return GradCAM.overlay_heatmap(raw_np, heat), raw_np, int(pred), float(prob[pred])
 
 
-def draw(cells, backbones, class_names, save_path, title, ncols=5):
-    """cells[backbone] = list ของ dict(raw, overlay, true, pred, conf, stem) ยาวไม่เกิน ncols"""
-    nrows = len(backbones) * 2
-    fig, axs = plt.subplots(nrows, ncols, figsize=(2.3 * ncols + 1.4, 2.35 * nrows), squeeze=False)
+def draw(cells, backbones, class_names, save_path, title, ncols=5, true_each_cell=False,
+         with_original=False):
+    """cells[backbone] = list ของ dict(raw, overlay, true, pred, conf, stem) ยาวไม่เกิน ncols
+    ค่าเริ่มต้น: 1 แถวต่อ backbone (เฉพาะ GradCAM), true label อยู่บนรูปแถวบนสุด
+    true_each_cell=True: ใส่ true label บนทุกรูป (ใช้กับรูปที่ผิด ซึ่งแต่ละ backbone ผิดคนละรูป)
+    with_original=True : เพิ่มแถว Original ของแต่ละ backbone"""
+    per = 2 if with_original else 1
+    nrows = len(backbones) * per
+    fig, axs = plt.subplots(nrows, ncols, figsize=(2.15 * ncols + 1.0, (2.15 + (0.35 if true_each_cell else 0.2)) * nrows + 0.5),
+                            squeeze=False,
+                            gridspec_kw={"hspace": 0.5 if true_each_cell else 0.28, "wspace": 0.06,
+                                         "left": 0.07, "right": 0.99, "top": 0.88 if true_each_cell else 0.90, "bottom": 0.04})
     for ax in axs.ravel():
         ax.axis("off")
     for bi, b in enumerate(backbones):
-        r0, r1 = bi * 2, bi * 2 + 1
+        r_cam = bi * per + (1 if with_original else 0)
         for ci, c in enumerate(cells[b][:ncols]):
-            axs[r0][ci].imshow(c["raw"])
-            axs[r0][ci].set_title(f"True: {class_names[c['true']]}\n{c['stem']}", fontsize=7)
-            axs[r1][ci].imshow(c["overlay"])
+            if with_original:
+                axs[bi * per][ci].imshow(c["raw"])
+            ax = axs[r_cam][ci]
+            ax.imshow(c["overlay"])
             ok = c["true"] == c["pred"]
-            axs[r1][ci].text(0.5, -0.04, f"Pred: {class_names[c['pred']]} ({c['conf']:.0%})",
-                             transform=axs[r1][ci].transAxes, ha="center", va="top", fontsize=7.5,
-                             color=COL_OK if ok else COL_BAD)
-        for r, lab in ((r0, "Original"), (r1, "GradCAM")):
-            axs[r][0].text(-0.08, 0.5, f"[{NICE.get(b, b)}]\n{lab}", transform=axs[r][0].transAxes,
-                           rotation=90, ha="right", va="center", fontsize=9, fontweight="bold",
-                           color="#2a7ab9" if r == r0 else "#c0392b")
-    fig.suptitle(title, fontsize=12, fontweight="bold")
-    plt.tight_layout(rect=(0.03, 0, 1, 0.98))
+            ax.text(0.5, -0.03, f"Pred: {class_names[c['pred']]} ({c['conf']:.0%})",
+                    transform=ax.transAxes, ha="center", va="top", fontsize=7.5,
+                    color=COL_OK if ok else COL_BAD)
+            if true_each_cell or bi == 0:
+                top = axs[bi * per][ci]
+                top.text(0.5, 1.03, f"True: {class_names[c['true']]}\n{c['stem']}",
+                         transform=top.transAxes, ha="center", va="bottom", fontsize=7)
+        axs[bi * per][0].text(-0.08, 0.5 if not with_original else 0.0,
+                              f"[{NICE.get(b, b)}]", transform=axs[bi * per][0].transAxes,
+                              rotation=90, ha="right", va="center", fontsize=9, fontweight="bold",
+                              color="#c0392b")
+    fig.suptitle(title, fontsize=11, fontweight="bold")
+    plt.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def draw_summary(originals, cells, backbones, class_names, save_path, title):
+    """แถวบนสุด = Original (true label อยู่บนรูป) / แถวถัดไป = GradCAM ของแต่ละ backbone / คอลัมน์ = คลาส"""
+    ncols, nrows = len(originals), len(backbones) + 1
+    fig, axs = plt.subplots(nrows, ncols, figsize=(2.3 * ncols + 1.0, 2.3 * nrows + 0.6), squeeze=False,
+                            gridspec_kw={"hspace": 0.3, "wspace": 0.06, "left": 0.1, "right": 0.99,
+                                         "top": 0.88, "bottom": 0.04})
+    for ax in axs.ravel():
+        ax.axis("off")
+    for ci, o in enumerate(originals):
+        axs[0][ci].imshow(o["raw"])
+        axs[0][ci].text(0.5, 1.03, f"True: {class_names[o['true']]}\n{o['stem']}", transform=axs[0][ci].transAxes,
+                        ha="center", va="bottom", fontsize=8, fontweight="bold")
+    axs[0][0].text(-0.08, 0.5, "Original", transform=axs[0][0].transAxes, rotation=90,
+                   ha="right", va="center", fontsize=9, fontweight="bold", color="#2a7ab9")
+    for bi, b in enumerate(backbones):
+        for ci, c in enumerate(cells[b]):
+            ax = axs[bi + 1][ci]
+            ax.imshow(c["overlay"])
+            ax.text(0.5, -0.03, f"Pred: {class_names[c['pred']]} ({c['conf']:.0%})", transform=ax.transAxes,
+                    ha="center", va="top", fontsize=7.5, color=COL_OK if c["true"] == c["pred"] else COL_BAD)
+        axs[bi + 1][0].text(-0.08, 0.5, f"[{NICE.get(b, b)}]", transform=axs[bi + 1][0].transAxes, rotation=90,
+                            ha="right", va="center", fontsize=9, fontweight="bold", color="#c0392b")
+    fig.suptitle(title, fontsize=11, fontweight="bold")
     plt.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
@@ -131,8 +167,8 @@ def draw(cells, backbones, class_names, save_path, title, ncols=5):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tag", required=True)
-    ap.add_argument("--no-replace", action="store_true")
     ap.add_argument("--n-wrong", type=int, default=5)
+    ap.add_argument("--with-original", action="store_true", help="เพิ่มแถว Original (ค่าเริ่มต้น: ไม่มี เพื่อให้รูปสั้น)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -150,9 +186,6 @@ def main():
         sys.exit("STOP: test folder is missing a class -> labels would shift.")
 
     by_stem = {Path(p).stem: (p, l) for p, l in samples}
-    missing = [s for v in WANTED.values() for s in v if s not in by_stem]
-    if missing:
-        print("WARNING: ไม่พบรูปเหล่านี้ใน test set (ข้าม/สลับให้):", missing)
 
     with open(config.output_root / "experiment_results.pkl", "rb") as f:
         results = pickle.load(f)
@@ -187,53 +220,32 @@ def main():
 
     def all_correct(path, label):
         return all(preds[b][path] == label for b in backbones)
-
-    # ---- เลือกรูปที่ทายถูก (สลับถ้ามี backbone ทายผิด) ----
-    chosen, swaps, still_wrong = {}, [], []
-    for ci, cname in enumerate(class_names):
-        want = [s for s in WANTED.get(cname, []) if s in by_stem]
-        pool = [Path(p).stem for p, l in samples if l == ci and Path(p).stem not in WANTED.get(cname, [])
-                and all_correct(p, l)]
-        final = []
-        for s in WANTED.get(cname, []):
-            if s not in by_stem:
-                repl = pool.pop(0) if pool else None
-                if repl:
-                    final.append(repl); swaps.append((s, repl, "not in test set"))
-                continue
-            p, l = by_stem[s]
-            if all_correct(p, l) or args.no_replace:
-                final.append(s)
-                if not all_correct(p, l):
-                    still_wrong.append(s)
-            else:
-                bad = [NICE.get(b, b) for b in backbones if preds[b][p] != l]
-                repl = pool.pop(0) if pool else None
-                if repl:
-                    final.append(repl); swaps.append((s, repl, "wrong in: " + ", ".join(bad)))
-                else:
-                    final.append(s); still_wrong.append(s)
-        chosen[cname] = final
-
-    if swaps:
-        print("\nสลับรูป (ขอ -> ใช้จริง):")
-        for a, b_, why in swaps:
-            print(f"  {a} -> {b_}   [{why}]")
-    if still_wrong:
-        print("\nรูปที่ยังมี backbone ทายผิด (ชื่อใต้ภาพจะเป็นสีแดง):", still_wrong)
-
-    # ---- pass 2: GradCAM + วาดรูป ----
+    # ---- รูปที่ทายถูก: 1 รูปต่อคลาส, แถวบนสุด = Original, แถวถัดไป = GradCAM ของแต่ละ backbone ----
     sel_rows = []
-    for ci, cname in enumerate(class_names):
-        cells = {b: [] for b in backbones}
-        for s in chosen[cname]:
-            p, l = by_stem[s]
-            for b in backbones:
-                ov, raw, pr, cf = explain(models[b], cams[b], p, raw_tf, eval_tf, device)
-                cells[b].append(dict(raw=raw, overlay=ov, true=l, pred=pr, conf=cf, stem=s))
-                sel_rows.append(["correct", b, seeds[b], s, class_names[l], class_names[pr], f"{cf:.4f}"])
-        draw(cells, backbones, class_names, out_dir / f"fig_correct_{cname}.png",
-             f"GradCAM — {args.tag} — correct predictions: {cname}")
+    summary_stems = [SUMMARY[c] for c in class_names if c in SUMMARY]
+    problems = []
+    cells = {b: [] for b in backbones}
+    originals = []
+    for s in summary_stems:
+        if s not in by_stem:
+            sys.exit(f"STOP: {s} ไม่อยู่ใน test set")
+        p, l = by_stem[s]
+        originals.append(dict(raw=None, true=l, stem=s))
+        for b in backbones:
+            ov, raw, pr, cf = explain(models[b], cams[b], p, raw_tf, eval_tf, device)
+            cells[b].append(dict(raw=raw, overlay=ov, true=l, pred=pr, conf=cf, stem=s))
+            originals[-1]["raw"] = raw
+            sel_rows.append(["summary", b, seeds[b], s, class_names[l], class_names[pr], f"{cf:.4f}"])
+            if pr != l:
+                problems.append((s, NICE.get(b, b), class_names[pr]))
+    if problems:
+        print("\n!! แจ้งเตือน: รูปที่ขอบาง backbone ทายผิด (ใต้ภาพเป็นสีแดง):")
+        for s, b, pr in problems:
+            print(f"   {s}: {b} ทายเป็น {pr}")
+    else:
+        print("\nรูปที่ขอทั้ง 4 รูป: ทุก backbone ทายถูกทั้งหมด")
+    draw_summary(originals, cells, backbones, class_names, out_dir / "fig_correct_summary.png",
+                 f"GradCAM — {args.tag} — correct predictions")
 
     wrong_cells = {b: [] for b in backbones}
     for b in backbones:
@@ -246,7 +258,8 @@ def main():
         if not wrong:
             print(f"  {b}: ไม่มีรูปที่ทายผิดเลย")
     draw(wrong_cells, backbones, class_names, out_dir / "fig_wrong.png",
-         f"GradCAM — {args.tag} — misclassified (first {args.n_wrong} per backbone)", ncols=args.n_wrong)
+         f"GradCAM — {args.tag} — misclassified (first {args.n_wrong} per backbone)", ncols=args.n_wrong,
+         true_each_cell=True, with_original=args.with_original)
 
     with open(out_dir / "selection.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
