@@ -4,7 +4,7 @@ scripts/gradcam_correct_wrong.py
 GradCAM ของ "ทุกภาพใน test set" ของ median seed แต่ละ backbone แล้วแยกเป็น
   - correct/<true_class>/...      ภาพที่ทายถูก
   - wrong/<true>_as_<pred>/...    ภาพที่ทายผิด
-พร้อม contact sheet สำหรับใส่รายงาน
+พร้อม contact sheet สำหรับใส่รายงาน และ summary.csv (ผลทำนายรายรูป รายโมเดล: method,backbone,seed,image,true,pred,correct,confidence)
 ไม่เทรนใหม่ ไม่แก้ experiment_log.csv / experiment_results.pkl (อ่านอย่างเดียว)
 
 วางไฟล์นี้ในโฟลเดอร์ scripts/ ข้างๆ run_all_experiments.py แล้วรันจาก root ของโปรเจกต์ (ทีละวิธีเทรน):
@@ -19,6 +19,7 @@ GradCAM ของ "ทุกภาพใน test set" ของ median seed แ�
     --out PATH                     ค่าเริ่มต้น: <output_root>/gradcam_correct_wrong/<tag>
 """
 import sys
+import csv
 import json
 import pickle
 import random
@@ -106,6 +107,7 @@ def main():
     eval_tf = TransformFactory(config.image_size).eval_transform()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     rng = random.Random(args.sheet_seed)
+    summary_rows = []   # ผลทำนายรายรูป รายโมเดล -> summary.csv
 
     for backbone in config.backbone_names:
         run = median_run(results[backbone])
@@ -150,6 +152,10 @@ def main():
             heatmap, pred = cam.generate(eval_tf(img).unsqueeze(0))      # ใช้คลาสที่โมเดลทายเอง
             overlay = GradCAM.overlay_heatmap(raw_np, heatmap)
             pred_name = class_names[pred]
+            with torch.no_grad():
+                conf = float(torch.softmax(model(eval_tf(img).unsqueeze(0).to(device)), dim=1)[0, pred])
+            summary_rows.append([args.tag, backbone, seed, Path(path).stem, true_name, pred_name,
+                                 int(pred == label), f"{conf:.4f}"])
             stem = Path(path).stem
 
             if pred == label:
@@ -177,6 +183,13 @@ def main():
             contact_sheet(pick, bdir / f"sheet_correct_{n}.png",
                           f"{backbone} (seed {seed}) – correct, true class {n} "
                           f"({len(pick)} of {len(items)} shown)")
+
+    out_root.mkdir(parents=True, exist_ok=True)
+    with open(out_root / "summary.csv", "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow(["method", "backbone", "seed", "image", "true", "pred", "correct", "confidence"])
+        w.writerows(summary_rows)
+    print(f"summary.csv: {len(summary_rows)} rows -> {out_root / 'summary.csv'}")
 
     print(f"\nDone. Output: {out_root}")
 
