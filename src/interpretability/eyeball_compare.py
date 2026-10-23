@@ -148,29 +148,29 @@ def main():
         ref = D[keys[0]]
 
         if args.images:
-            chosen = [(s, "เลือกเอง") for s in args.images if s in ref]
+            chosen = [(s, "manual") for s in args.images if s in ref]
         elif len(keys) == 2:
             F, S = D["freeze"], D["selective"]
             fixed = [s for s in F if wrong(F, s) and not wrong(S, s)]
             both = [s for s in F if wrong(F, s) and wrong(S, s)]
             ok = [s for s in F if not wrong(F, s) and not wrong(S, s)]
             rng.shuffle(fixed); rng.shuffle(both)
-            chosen = [(s, "A: Freeze ผิด -> Selective ถูก") for s in fixed[:args.per_group]]
-            chosen += [(s, "B: ผิดทั้งสองวิธี") for s in both[:args.per_group]]
+            chosen = [(s, "A: Freeze wrong -> Selective correct") for s in fixed[:args.per_group]]
+            chosen += [(s, "B: wrong in both") for s in both[:args.per_group]]
             for ci in range(len(classes)):
                 pool = [s for s in ok if F[s][2] == ci]
                 if pool:
-                    chosen.append((rng.choice(pool), "C: ถูกทั้งสองวิธี"))
+                    chosen.append((rng.choice(pool), "C: correct in both"))
         else:
             R = D[keys[0]]
             bad = [s for s in R if wrong(R, s)]
             ok = [s for s in R if not wrong(R, s)]
             rng.shuffle(bad)
-            chosen = [(s, "W: ทายผิด") for s in bad[:2 * args.per_group]]
+            chosen = [(s, "W: wrong") for s in bad[:2 * args.per_group]]
             for ci in range(len(classes)):
                 pool = [s for s in ok if R[s][2] == ci]
                 if pool:
-                    chosen.append((rng.choice(pool), "C: ทายถูก"))
+                    chosen.append((rng.choice(pool), "C: correct"))
         if not chosen:
             print(f"{b}: ไม่มีรูปให้เทียบ"); continue
 
