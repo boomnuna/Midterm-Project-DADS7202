@@ -1,0 +1,6 @@
+split_train_test.py >> split dataset to train/test folder 
+scrape_images.py >> scrape image from internet 
+rename_images.py >> rename all images starting from 1-n
+dedupe_and_clean.py >> split duplicate images 
+dedupe_and_clean_V2.py >> split duplicate + near duplicate images
+ 
